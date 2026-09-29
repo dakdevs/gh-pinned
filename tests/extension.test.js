@@ -243,12 +243,12 @@ await test('soft navigation, header replacement, and body replacement preserve o
   assert.equal(
     await page.locator('#ghpin-root').evaluate((host) => {
       return (
-        host.getBoundingClientRect().top >=
-        document.querySelector('.AppHeader').getBoundingClientRect().bottom
+        host.getBoundingClientRect().bottom <=
+        document.querySelector('.AppHeader').getBoundingClientRect().top
       )
     }),
     true,
-    'All global header rows must remain above the fallback strip',
+    'The strip must stay above the entire fallback header',
   )
 
   for (const pathname of ['/acme/rocket/issues', '/acme/rocket/pull/1', '/acme/rocket/settings']) {
@@ -280,9 +280,10 @@ await test('soft navigation, header replacement, and body replacement preserve o
 
   assert.equal(
     await page.locator('#ghpin-slot').evaluate((slot) => {
-      return slot.previousElementSibling.className
+      return slot.previousElementSibling === document.body.firstElementChild
     }),
-    'AppHeader',
+    true,
+    'The body must reserve strip space before the replacement header',
   )
 
   await page.evaluate(() => {
@@ -299,6 +300,31 @@ await test('soft navigation, header replacement, and body replacement preserve o
   await expectRepos(page, ['acme/rocket'])
 
   assert.equal(await page.locator('#ghpin-bar').count(), 1)
+
+  assert.equal(
+    await page.locator('#ghpin-root').evaluate((host) => {
+      return host.parentElement.tagName
+    }),
+    'BODY',
+  )
+
+  assert.equal(
+    await page.locator('#ghpin-bar').evaluate((bar) => {
+      return bar.getBoundingClientRect().top
+    }),
+    0,
+  )
+
+  assert.equal(
+    await page.locator('#ghpin-root').evaluate((host) => {
+      return (
+        host.getBoundingClientRect().bottom <=
+        document.querySelector('.AppHeader').getBoundingClientRect().top
+      )
+    }),
+    true,
+    'Replacing the body must restore the strip above the new global header',
+  )
 })
 
 await test('simultaneous pins and unpins propagate between open tabs without losing a different repo', async (t) => {
@@ -362,7 +388,7 @@ await test('simultaneous pins and unpins propagate between open tabs without los
   await expectRepos(second, ['acme/rocket'])
 })
 
-await test('the strip follows theme colors, stays horizontally scrollable, and fits between global and repository navigation', async (t) => {
+await test('the strip follows page theme colors, stays horizontally scrollable, and appears above all GitHub navigation', async (t) => {
   const repos = [
     'acme/rocket',
     'octo/tools',
@@ -405,7 +431,7 @@ await test('the strip follows theme colors, stays horizontally scrollable, and f
       color: getComputedStyle(bar).color,
       top: bar.getBoundingClientRect().top,
       bottom: bar.getBoundingClientRect().bottom,
-      globalBottom: document.querySelector('.global-row').getBoundingClientRect().bottom,
+      globalTop: document.querySelector('.GlobalNav').getBoundingClientRect().top,
       repositoryTop: document.querySelector('nav[aria-label="Repository"]').getBoundingClientRect()
         .top,
     }
@@ -415,9 +441,11 @@ await test('the strip follows theme colors, stays horizontally scrollable, and f
 
   assert.equal(styles.color, 'rgb(31, 35, 40)')
 
+  assert.equal(styles.top, 0)
+
   assert.ok(
-    styles.top >= styles.globalBottom,
-    'Both global header rows must remain above the strip',
+    styles.bottom <= styles.globalTop,
+    'The whole global header must remain below the strip',
   )
 
   assert.ok(
@@ -468,10 +496,12 @@ await test('the strip follows theme colors, stays horizontally scrollable, and f
   const marketingPlacement = await bar.evaluate((bar) => {
     return {
       insidePartial: Boolean(bar.closest('react-partial')),
-      precedingTag: bar.closest('#ghpin-slot').previousElementSibling.tagName,
+      parent: bar.closest('#ghpin-root').parentElement.tagName,
+      firstBodyElement: document.body.firstElementChild.id,
       top: bar.getBoundingClientRect().top,
-      headerBottom: document.querySelector('header[data-marketing-header]').getBoundingClientRect()
-        .bottom,
+      bottom: bar.getBoundingClientRect().bottom,
+      headerTop: document.querySelector('header[data-marketing-header]').getBoundingClientRect()
+        .top,
       background: getComputedStyle(bar).backgroundColor,
       color: getComputedStyle(bar).color,
     }
@@ -479,9 +509,13 @@ await test('the strip follows theme colors, stays horizontally scrollable, and f
 
   assert.equal(marketingPlacement.insidePartial, false)
 
-  assert.equal(marketingPlacement.precedingTag, 'REACT-PARTIAL')
+  assert.equal(marketingPlacement.parent, 'BODY')
 
-  assert.ok(marketingPlacement.top >= marketingPlacement.headerBottom)
+  assert.equal(marketingPlacement.firstBodyElement, 'ghpin-root')
+
+  assert.equal(marketingPlacement.top, 0)
+
+  assert.ok(marketingPlacement.bottom <= marketingPlacement.headerTop)
 
   assert.equal(marketingPlacement.background, 'rgb(246, 248, 250)')
 

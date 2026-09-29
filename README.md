@@ -1,6 +1,6 @@
 # gh-pinned
 
-A Chrome extension that embeds a React and TypeScript repository switcher below GitHub's global header. All styling is authored in StyleX and compiled into the extension's CSS.
+A Chrome extension that embeds a React and TypeScript repository switcher at the viewport top on GitHub. All styling is authored in StyleX and compiled into the extension's CSS.
 
 ## Install
 
@@ -28,7 +28,7 @@ The current repository keeps its selected underline throughout its subpages. Sho
 
 If a successful inspection finds the chosen section is no longer available, its saved destination is permanently reset to **Repo home**. A failed or incomplete inspection keeps the saved preference and offers a home-page fallback. Other repositories' preferences and pins are retained.
 
-Pins stay in this browser profile's extension storage and update across open GitHub tabs. The strip scrolls horizontally when the shortcuts exceed the available width. When the page scrolls past the strip's initial position, it stays at the viewport top. Its original space is reserved to prevent a layout jump; overlapping native sticky navigation is moved below it.
+Pins stay in this browser profile's extension storage and update across open GitHub tabs. The strip scrolls horizontally when the shortcuts exceed the available width. It stays at the viewport top from its first render and throughout scrolling. A placeholder reserves its height above the page content, and overlapping native sticky navigation is moved below it.
 
 ## Install or update with an agent
 
@@ -36,7 +36,7 @@ From this checkout, run `npm ci` and `npm run build`. Installation automatically
 
 For an existing installation, build into the same absolute `dist` path and use **Reload** on its existing extension card. Keeping that installation and extension ID preserves its stored pins and destinations. Refresh open GitHub pages after loading or reloading the extension.
 
-Verify a temporary repository shows **Pin**, a saved tab opens its destination menu with **Unpin repository**, and choosing a destination leaves the current page open. Check the saved choice after a page refresh, cancel an unpin confirmation, then scroll to confirm the strip stays at the viewport top without covering GitHub's sticky navigation.
+Verify a temporary repository shows **Pin**, a saved tab opens its destination menu with **Unpin repository**, and choosing a destination leaves the current page open. Check the saved choice after a page refresh and cancel an unpin confirmation. Confirm the strip starts at the viewport top, leaves GitHub's global header accessible below it, and remains above native sticky navigation while scrolling.
 
 ## Build and verify
 
@@ -62,12 +62,12 @@ Run **Oxfmt** with `npm run format` to format maintained files, or `npm run form
 
 ## Implementation
 
-- `src/content.tsx` mounts a React root and renders the switcher. GitHub repository metadata must agree with the URL, with a matching repository-header link as a fallback. `src/repository-store.ts` parses stored data with Zod at the extension-storage boundary.
+- `src/content.tsx` mounts a React root and renders the switcher. GitHub repository metadata must agree with the URL, with a matching repository-header link as a fallback. `src/repository-store.ts` parses stored data with Zod at the extension-storage boundary. Schemas are constructed once at module scope after `z.config({ jitless: true })`, because Manifest V3 blocks runtime compilation; see [Zod's CSP guidance](https://zod.dev/compile#content-security-policy).
 - `src/styles.ts` recreates Primer's UnderlineNav and confirmation-dialog appearance using GitHub's CSS variables. The dashed temporary border and the current-repository underline are independent.
 - `src/RepositoryMenu.tsx` renders the destination menu; `src/repository-navigation.ts` reads actual GitHub navigation from the current DOM or a same-origin authenticated fetch. Fetched HTML is parsed in a detached document and never injected or executed. Availability is refreshed on menu use and repository visits; concurrent requests are bounded and deduplicated.
-- `src/sticky-bar.ts` reserves the bar's original space, moves it outside the header when fixed, and offsets overlapping native sticky navigation.
+- `src/sticky-bar.ts` keeps the bar fixed at the viewport top, reserves its height with a placeholder at the start of the body, and offsets overlapping native sticky navigation.
 - `build.mjs` uses esbuild and the official StyleX unplugin to produce `dist/content.js`, `dist/content.css`, and `dist/manifest.json`.
-- Each permanent repository has its own `chrome.storage.local` key. There is no shared array that concurrent tabs can overwrite.
+- Each permanent repository has its own `chrome.storage.local` key. There is no shared array that concurrent tabs can overwrite. Destination writes and automatic reset read/remove sequences share a per-repository Web Lock across normal GitHub tabs.
 - The content script observes GitHub's Turbo events, DOM replacement, and the browser's navigation events to update the current repository and restore the same React root without duplicate strips.
 
 The extension requests only `storage` and runs only on `https://github.com/*`. Section discovery reads GitHub repository pages in the current browser's access context. It requires no API token or server. GitHub Enterprise hosts are outside this version's scope. Removing the extension removes its pins and destination preferences.

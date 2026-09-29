@@ -10,11 +10,18 @@ const SELECTED =
 const HOVER = 'var(--bgColor-neutral-muted, var(--color-neutral-muted, rgba(175, 184, 193, 0.2)))'
 
 export const styles = create({
-  host: { display: 'block', width: '100%', minWidth: 0 },
-  floatingHost: { position: 'fixed', top: 0, left: 0, zIndex: 1002 },
+  host: {
+    display: 'block',
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    zIndex: 1002,
+    width: '100%',
+    minWidth: 0,
+    minHeight: 'var(--control-xlarge-size, 48px)',
+  },
   slot: { display: 'block', width: '100%', minWidth: 0, height: 'var(--ghpin-slot-height, auto)' },
   nativeStickyOffset: { top: 'var(--ghpin-sticky-top) !important' },
-  measureFlow: { position: 'static !important', top: 'auto !important' },
   bar: {
     display: 'flex',
     alignItems: 'flex-start',

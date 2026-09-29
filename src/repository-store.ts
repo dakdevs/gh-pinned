@@ -1,5 +1,9 @@
 import { z } from 'zod'
 
+// MV3 blocks runtime code generation. Set this before constructing schemas so
+// Zod skips its eval probe as well as its optional compiler fast path.
+z.config({ jitless: true })
+
 export const PIN_PREFIX = 'ghpin:'
 export const DESTINATION_PREFIX = 'ghpin-destination:'
 
@@ -57,7 +61,7 @@ export async function readSavedState() {
 
   const destinations: Record<string, string> = {}
 
-  for (const [key, value] of Object.entries(values)) {
+  for (const [key, value] of Object.entries<unknown>(values)) {
     if (key.startsWith(PIN_PREFIX)) {
       const result = PinSchema.safeParse(value)
 
@@ -85,7 +89,9 @@ export async function readDestination(name: string) {
 
   const values = await chrome.storage.local.get(key)
 
-  const result = DestinationSchema.safeParse(values[key])
+  const value: unknown = values[key]
+
+  const result = DestinationSchema.safeParse(value)
 
   return result.success && destinationKey(result.data.name) === key ? result.data.section : ''
 }
@@ -97,11 +103,27 @@ export async function persistDestination(name: string, section: string) {
 
   const key = destinationKey(name)
 
-  if (section) {
-    await chrome.storage.local.set({ [key]: { name, section } })
-  } else {
-    await chrome.storage.local.remove(key)
-  }
+  await navigator.locks.request(`${chrome.runtime.id}:${key}`, async () => {
+    if (section) {
+      await chrome.storage.local.set({ [key]: { name, section } })
+    } else {
+      await chrome.storage.local.remove(key)
+    }
+  })
+}
+
+export async function resetDestination(name: string, availableSections: readonly string[]) {
+  const key = destinationKey(name)
+
+  // Explicit choices and automatic resets share this key across tabs. Read
+  // inside the same lock as the removal so a newer choice cannot be erased.
+  await navigator.locks.request(`${chrome.runtime.id}:${key}`, async () => {
+    const choice = await readDestination(name)
+
+    if (choice && !availableSections.includes(choice)) {
+      await chrome.storage.local.remove(key)
+    }
+  })
 }
 
 export async function persistPin(name: string, add: boolean) {

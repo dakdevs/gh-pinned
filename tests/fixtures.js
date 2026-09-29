@@ -1,7 +1,8 @@
 /**
  * @typedef {{ label: string, section: string, href?: string, disabled?: boolean }} NavigationItem
  * @typedef {{ repo?: string | null, metadata?: string | null, theme?: string, header?: string,
- * navigation?: NavigationItem[], controls?: boolean, tall?: boolean, nativeSticky?: boolean }} FixtureOptions
+ * navigation?: NavigationItem[], controls?: boolean, tall?: boolean, nativeSticky?: boolean,
+ * nativeFixed?: boolean }} FixtureOptions
  */
 
 const defaultNavigation = [
@@ -56,7 +57,7 @@ function repositoryHeader(repo, header, repoNavigation) {
 
 /** @param {FixtureOptions} [options] */
 export function fixture(options = {}) {
-  const { repo, theme, header, controls, tall, nativeSticky } = {
+  const { repo, theme, header, controls, tall, nativeSticky, nativeFixed } = {
     repo: null,
     theme: 'light',
     header: 'GlobalNav',
@@ -109,8 +110,9 @@ export function fixture(options = {}) {
       .panel p { color: var(--fgColor-muted); }
       ${tall === true ? '.panel { min-height: 1800px; }' : ''}
       ${nativeSticky === true ? '.GlobalNav { position: sticky; top: var(--native-top, 0px); z-index: 100; }' : ''}
+      ${nativeFixed === true ? '.GlobalNav { position: fixed; left: 0; right: 0; height: 112px; top: var(--native-top, 0px); z-index: 100; } .native-fixed-reserve { height: 112px; }' : ''}
     </style></head>
-    <body>${globalHeader(header, repoNavigation)}<main>
+    <body>${globalHeader(header, repoNavigation)}${nativeFixed === true ? '<div class="native-fixed-reserve" aria-hidden="true"></div>' : ''}<main>
       ${repositoryHeader(repo, header, repoNavigation)}
       <div class="panel"><strong>${repo ?? 'Your GitHub home'}</strong>
       <p>Controlled GitHub-style fixture for extension integration checks.</p>

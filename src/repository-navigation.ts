@@ -2,14 +2,6 @@ const GITHUB_ORIGIN = 'https://github.com'
 const inFlight = new Map<string, Promise<NavResult>>()
 
 function repositoryHome(name: string) {
-  if (
-    !/^[a-z\d][a-z\d-]{0,38}\/[a-z\d_.-]{1,100}$/iu.test(name) ||
-    name.endsWith('/.') ||
-    name.endsWith('/..')
-  ) {
-    throw new TypeError('Expected a repository name in owner/repository form.')
-  }
-
   return new URL(`/${name}`, GITHUB_ORIGIN)
 }
 

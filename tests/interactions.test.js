@@ -4,13 +4,6 @@ import path from 'node:path'
 import { test } from 'node:test'
 import { artifactsPath, browser, shortcut, expectRepos, expectPinned, openUnpin } from './harness'
 
-/** @param {string} expected */
-function stickyStateIs(expected) {
-  const host = document.querySelector('#ghpin-root')
-
-  return host instanceof HTMLElement && host.dataset.ghpinSticky === expected
-}
-
 await test('unpin confirmation contains keyboard focus and cancellation preserves pins and restores the invoker', async (t) => {
   const context = await browser(
     t,
@@ -127,6 +120,38 @@ await test('unpin confirmation contains keyboard focus and cancellation preserve
       'false',
     )
   }
+
+  await openUnpin(page, 'octo/tools')
+
+  await page.evaluate(() => {
+    document.body.replaceWith(document.body.cloneNode(true))
+
+    document.dispatchEvent(new Event('turbo:render'))
+  })
+
+  await dialog.waitFor({ state: 'hidden' })
+
+  await expectRepos(page, ['acme/rocket', 'octo/tools'], 'octo/tools')
+
+  await page.waitForFunction(() => {
+    return getComputedStyle(document.body).overflowY !== 'hidden'
+  })
+
+  assert.equal(
+    await page.evaluate(() => {
+      return getComputedStyle(document.documentElement).overflowY
+    }),
+    'visible',
+    'Closing a dialog during body restoration must release the document scroll lock',
+  )
+
+  assert.equal(await page.locator('#ghpin-root').count(), 1)
+
+  await expectPinned(page, 'octo/tools')
+
+  await page.reload()
+
+  await expectPinned(page, 'octo/tools')
 })
 
 /** @param {import('playwright').Page} page @param {string} temporary @param {string} actionLabel */
@@ -784,166 +809,4 @@ await test('reliable removal of a saved destination resets it permanently, while
   await page.locator('#ghpin-bar a[href="https://github.com/acme/rocket/settings"]').waitFor()
 
   await page.locator('#ghpin-bar a[href="https://github.com/octo/tools/pulls"]').waitFor()
-})
-
-await test('the repository strip stays at the viewport top while scrolling without shifting content or covering native sticky navigation', async (t) => {
-  const context = await browser(
-    t,
-    new Map([['/acme/rocket', { repo: 'acme/rocket', tall: true, nativeSticky: true }]]),
-  )
-
-  const page = await context.newPage()
-
-  await page.goto('https://github.com/acme/rocket')
-
-  await expectRepos(page, ['acme/rocket'], 'acme/rocket')
-
-  const host = page.locator('#ghpin-root')
-
-  await page.waitForFunction(stickyStateIs, 'false')
-
-  const baseline = await page.evaluate(() => {
-    return {
-      mainTop: document.querySelector('main').getBoundingClientRect().top + scrollY,
-      barTop: document.querySelector('#ghpin-bar').getBoundingClientRect().top,
-      globalBottom: document.querySelector('.global-row').getBoundingClientRect().bottom,
-    }
-  })
-
-  assert.ok(baseline.barTop >= baseline.globalBottom)
-
-  await page.evaluate(() => {
-    scrollTo(0, 500)
-  })
-
-  await page.waitForFunction(stickyStateIs, 'true')
-
-  const sticky = await page.evaluate(() => {
-    return {
-      top: document.querySelector('#ghpin-bar').getBoundingClientRect().top,
-      bottom: document.querySelector('#ghpin-bar').getBoundingClientRect().bottom,
-      width: document.querySelector('#ghpin-root').getBoundingClientRect().width,
-      parent: document.querySelector('#ghpin-root').parentElement.tagName,
-      mainTop: document.querySelector('main').getBoundingClientRect().top + scrollY,
-      nativeTop: document.querySelector('.GlobalNav').getBoundingClientRect().top,
-    }
-  })
-
-  assert.equal(sticky.top, 0)
-
-  assert.equal(sticky.width, 1280)
-
-  assert.equal(sticky.parent, 'BODY')
-
-  assert.equal(sticky.mainTop, baseline.mainTop, 'The placeholder must preserve content position')
-
-  assert.ok(
-    sticky.nativeTop >= sticky.bottom,
-    'Native sticky navigation must be below the repository strip',
-  )
-
-  await page.locator('.GlobalNav').evaluate((header) => {
-    header.style.setProperty('--native-top', '80px')
-  })
-
-  await page.setViewportSize({ width: 760, height: 800 })
-
-  await page.waitForFunction(() => {
-    return document.querySelector('#ghpin-root').getBoundingClientRect().width === 760
-  })
-
-  await page.waitForFunction(() => {
-    return getComputedStyle(document.querySelector('.GlobalNav')).top === '80px'
-  })
-
-  assert.equal(
-    await page.locator('.GlobalNav').evaluate((header) => {
-      return header.getBoundingClientRect().top
-    }),
-    80,
-    'A responsive native top below the bar must keep its own 80px position',
-  )
-
-  await page.locator('.GlobalNav').evaluate((header) => {
-    header.style.setProperty('--native-top', '0px')
-
-    window.dispatchEvent(new Event('resize'))
-  })
-
-  await page.waitForFunction(() => {
-    const bar = document.querySelector('#ghpin-bar').getBoundingClientRect()
-
-    return document.querySelector('.GlobalNav').getBoundingClientRect().top >= bar.bottom
-  })
-
-  await page.evaluate(() => {
-    history.pushState({}, '', '/acme/rocket/issues')
-
-    const replacement = document.createElement('header')
-
-    replacement.className = 'GlobalNav'
-
-    replacement.innerHTML =
-      '<div class="global-row" data-component="Stack" data-direction="horizontal">Replacement global header</div><nav class="repo-nav" aria-label="Repository"><a href="/acme/rocket">Code</a></nav>'
-
-    document.querySelector('.GlobalNav').replaceWith(replacement)
-  })
-
-  await expectRepos(page, ['acme/rocket'], 'acme/rocket')
-
-  await page.waitForFunction(stickyStateIs, 'true')
-
-  await page.waitForFunction(() => {
-    return document.querySelector('#ghpin-root').getBoundingClientRect().top === 0
-  })
-
-  await page.waitForFunction(() => {
-    return (
-      document.querySelector('.GlobalNav').getBoundingClientRect().top >=
-      document.querySelector('#ghpin-root').getBoundingClientRect().bottom
-    )
-  })
-
-  assert.equal(await page.locator('#ghpin-slot').count(), 1)
-
-  assert.equal(await host.count(), 1)
-
-  await page.locator('.GlobalNav').evaluate((header) => {
-    header.replaceWith(header.cloneNode(true))
-
-    document.dispatchEvent(new Event('turbo:render'))
-  })
-
-  await page.waitForFunction(stickyStateIs, 'true')
-
-  await page.evaluate(() => {
-    scrollTo(0, 0)
-  })
-
-  await page.waitForFunction(stickyStateIs, 'false')
-
-  assert.equal(
-    await host.evaluate((host) => {
-      return host.parentElement.id
-    }),
-    'ghpin-slot',
-  )
-
-  assert.equal(
-    await page.locator('.GlobalNav').evaluate((header) => {
-      return getComputedStyle(header).top
-    }),
-    '0px',
-    'Restoring a cloned header must not retain the extension’s temporary sticky offset',
-  )
-
-  assert.ok(
-    await page.evaluate(() => {
-      return (
-        document.querySelector('#ghpin-bar').getBoundingClientRect().top >=
-        document.querySelector('.global-row').getBoundingClientRect().bottom
-      )
-    }),
-    'Returning to the top must place the strip below the restored global row',
-  )
 })

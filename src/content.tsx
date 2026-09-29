@@ -2,7 +2,7 @@ import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import type { KeyboardEvent, MouseEvent } from 'react'
 import { createRoot } from 'react-dom/client'
 import { PinIcon, PersonIcon, XIcon } from '@primer/octicons-react'
-import { attrs, props } from '@stylexjs/stylex'
+import { props } from '@stylexjs/stylex'
 import { styles } from './styles'
 import { RepositoryMenu } from './RepositoryMenu'
 import { extractRepositoryNavigation } from './repository-navigation'
@@ -13,8 +13,8 @@ import {
   repositoryName,
   storageKey,
   readSavedState,
-  readDestination,
   persistDestination,
+  resetDestination,
   persistPin,
 } from './repository-store'
 import './stylex.css'
@@ -200,9 +200,10 @@ function UnpinDialog({
 
       dialog.close()
 
-      scrollContainers.forEach((element) => {
+      // A Turbo body clone can carry our class onto the new live body.
+      for (const element of [...scrollContainers, document.body]) {
         element.classList.remove(...scrollClasses)
-      })
+      }
       // A confirmed non-current shortcut may already have disappeared.
 
       queueMicrotask(() => {
@@ -283,16 +284,12 @@ async function resetUnavailableDestination(name: string, result: NavResult) {
     return
   }
 
-  const choice = await readDestination(name)
-
-  if (
-    choice &&
-    !result.items.some((item) => {
-      return item.section === choice
-    })
-  ) {
-    await persistDestination(name, '')
-  }
+  await resetDestination(
+    name,
+    result.items.map((item) => {
+      return item.section
+    }),
+  )
 }
 
 function RepoBar({
@@ -677,34 +674,11 @@ function RepoBar({
 const host = document.createElement('div')
 host.id = HOST_ID
 host.dataset.turboPermanent = ''
-Object.entries(attrs(styles.host)).forEach(([key, value]) => {
-  host.setAttribute(key, value)
-})
 const root = createRoot(host)
 const sticky = createStickyBar(host)
 let previousCurrent: string | null | undefined
 let previousNavigationContext: string | undefined
 let scheduled = false
-
-function headerAnchor() {
-  const header = document.querySelector(
-    'header.GlobalNav, .AppHeader, header[data-marketing-header], .Header, header[role="banner"]',
-  )
-
-  const globalRow =
-    header !== null && header.matches('header.GlobalNav')
-      ? header.querySelector(':scope > [data-component="Stack"][data-direction="horizontal"]')
-      : null
-  // Signed-out GitHub forces its marketing header to dark mode inside a
-  // React partial. Mount outside that partial to inherit the page's theme.
-
-  return (
-    globalRow ??
-    (header !== null && header.matches('header[data-marketing-header]')
-      ? (header.closest('react-partial') ?? header)
-      : header)
-  )
-}
 
 function update() {
   // Keep the original React root when Turbo replaces the header or body.
@@ -712,25 +686,7 @@ function update() {
 
   removeDuplicates('ghpin-slot', sticky.slot)
 
-  const anchor = headerAnchor()
-
-  const relocated = anchor
-    ? anchor.nextElementSibling !== sticky.slot
-    : document.body?.firstElementChild !== sticky.slot
-
-  if (relocated) {
-    document.dispatchEvent(new Event('ghpin:relocating'))
-
-    host.querySelector<HTMLDialogElement>('dialog[open]')?.close()
-
-    if (anchor) {
-      anchor.after(sticky.slot)
-    } else {
-      document.body?.prepend(sticky.slot)
-    }
-  }
-
-  sticky.sync(relocated)
+  sticky.sync()
 
   const current = currentRepository()
 

@@ -1,25 +1,5 @@
-import { props, type StyleXStyles } from '@stylexjs/stylex'
+import { props } from '@stylexjs/stylex'
 import { styles } from './styles'
-
-function applyStyles(element: HTMLElement, ...values: StyleXStyles[]) {
-  const compiled = props(...values)
-
-  element.className = compiled.className ?? ''
-
-  for (const [name, value] of Object.entries(compiled.style ?? {})) {
-    element.style.setProperty(name, String(value))
-  }
-}
-
-function documentTop(element: HTMLElement) {
-  let top = 0
-
-  for (let node: Element | null = element; node instanceof HTMLElement; node = node.offsetParent) {
-    top += node.offsetTop
-  }
-
-  return top
-}
 
 function nativeHeaderCandidates(existing: Iterable<HTMLElement>) {
   const candidates = new Set(existing)
@@ -34,22 +14,41 @@ function nativeHeaderCandidates(existing: Iterable<HTMLElement>) {
     }
   }
 
-  return candidates
+  return [...candidates].toSorted((left, right) => {
+    return (left.compareDocumentPosition(right) & Node.DOCUMENT_POSITION_PRECEDING) === 0 ? -1 : 1
+  })
 }
 
-function overlapsBar(bounds: DOMRect, top: number, height: number) {
+function needsBarOffset(element: HTMLElement, top: number, height: number) {
+  const bounds = element.getBoundingClientRect()
+
   return (
     bounds.width >= innerWidth / 2 &&
     bounds.height >= 20 &&
-    bounds.height <= innerHeight / 2 &&
     Number.isFinite(top) &&
     top >= 0 &&
-    top < height
+    top < height &&
+    (bounds.top < height || !carriedBelowBar(element, height))
   )
 }
 
-// The placeholder keeps the original flow position. Floating outside GitHub's
-// header avoids its limited height and stacking contexts trapping the strip.
+function carriedBelowBar(element: HTMLElement, height: number) {
+  for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+    const css = getComputedStyle(parent)
+
+    if (
+      ['sticky', 'fixed'].includes(css.position) &&
+      Number(css.top.replace(/px$/u, '')) >= height
+    ) {
+      return true
+    }
+  }
+
+  return false
+}
+
+// Keep the fixed strip and its flow reservation outside GitHub's header.
+// The same React host survives Turbo and body replacements.
 export function createStickyBar(host: HTMLElement) {
   const slot = document.createElement('div')
 
@@ -57,49 +56,19 @@ export function createStickyBar(host: HTMLElement) {
 
   slot.dataset.turboPermanent = ''
 
-  applyStyles(slot, styles.slot)
+  host.className = props(styles.host).className ?? ''
 
-  let floating = false
+  slot.className = props(styles.slot).className ?? ''
+
+  host.dataset.ghpinSticky = 'true'
 
   let scheduled = false
-
-  let origin: number | undefined
 
   type HeaderOffset = { value: string; priority: string }
 
   const offsetHeaders = new Map<HTMLElement, HeaderOffset>()
 
   const offsetClass = props(styles.nativeStickyOffset).className ?? ''
-
-  const measureClasses = (props(styles.measureFlow).className ?? '').split(' ').filter(Boolean)
-
-  function measureOrigin() {
-    const positionedParents: HTMLElement[] = []
-
-    for (
-      let parent = slot.parentElement;
-      parent && parent !== document.body;
-      parent = parent.parentElement
-    ) {
-      if (['sticky', 'fixed'].includes(getComputedStyle(parent).position)) {
-        positionedParents.push(parent)
-      }
-    }
-    // offsetTop includes a sticky ancestor's current scroll translation. Read
-    // its normal flow position synchronously, then restore before any paint.
-
-    positionedParents.forEach((parent) => {
-      parent.classList.add(...measureClasses)
-    })
-
-    const top = documentTop(slot)
-
-    positionedParents.forEach((parent) => {
-      parent.classList.remove(...measureClasses)
-    })
-
-    return top
-  }
 
   function restoreHeader(element: HTMLElement, original: HeaderOffset) {
     element.classList.remove(offsetClass)
@@ -134,7 +103,7 @@ export function createStickyBar(host: HTMLElement) {
       const existing = offsetHeaders.get(element)
 
       // Read GitHub's current top without our override. Responsive layouts
-      // can change it while the strip is floating.
+      // can change it independently of the strip.
       if (existing) {
         element.classList.remove(offsetClass)
       }
@@ -149,11 +118,9 @@ export function createStickyBar(host: HTMLElement) {
         continue
       }
 
-      const bounds = element.getBoundingClientRect()
-
       const top = Number(css.top.replace(/px$/u, ''))
 
-      if (!overlapsBar(bounds, top, height)) {
+      if (!needsBarOffset(element, top, height)) {
         if (existing) {
           restoreHeader(element, existing)
         }
@@ -189,47 +156,23 @@ export function createStickyBar(host: HTMLElement) {
       }
     }
 
-    if (floating) {
-      offsetNativeHeaders(height)
-    } else {
-      for (const [element, original] of offsetHeaders) {
-        restoreHeader(element, original)
-      }
-    }
+    offsetNativeHeaders(height)
   }
 
-  function sync(remeasure = false) {
-    if (!slot.isConnected) {
-      return
-    }
+  function sync() {
+    const body = document.body
 
-    if (remeasure || origin === undefined) {
-      origin = measureOrigin()
-    }
-
-    const nextFloating = scrollY > origin
-
-    if (nextFloating !== floating || !host.isConnected) {
+    if (body.firstElementChild !== host || host.nextElementSibling !== slot) {
       document.dispatchEvent(new Event('ghpin:relocating'))
 
       host.querySelector<HTMLDialogElement>('dialog[open]')?.close()
 
-      floating = nextFloating
-
-      applyStyles(host, styles.host, floating && styles.floatingHost)
-
-      const container = floating ? document.body : slot
-
-      container.append(host)
+      body.prepend(host, slot)
     }
 
     const height = host.getBoundingClientRect().height
 
-    applyStyles(slot, styles.slot)
-
-    slot.style.setProperty('--ghpin-slot-height', floating ? `${height}px` : 'auto')
-
-    host.dataset.ghpinSticky = String(floating)
+    slot.style.setProperty('--ghpin-slot-height', `${height}px`)
 
     syncNativeHeaders(height)
   }
@@ -250,11 +193,7 @@ export function createStickyBar(host: HTMLElement) {
 
   window.addEventListener('scroll', schedule, { passive: true })
 
-  window.addEventListener('resize', () => {
-    origin = undefined
-
-    schedule()
-  })
+  window.addEventListener('resize', schedule)
 
   new ResizeObserver(schedule).observe(host)
 
