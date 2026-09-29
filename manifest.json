@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "GitHub pinned repositories",
+  "version": "1.0.0",
+  "description": "Keep your pinned repositories in a tab strip on GitHub.",
+  "permissions": ["storage"],
+  "content_scripts": [
+    {
+      "matches": ["https://github.com/*"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}

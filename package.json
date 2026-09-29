@@ -1,0 +1,45 @@
+{
+  "name": "github-pinned-tabs",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A small GitHub repository shortcut strip for Chrome.",
+  "type": "module",
+  "scripts": {
+    "prepare": "effect-tsgo patch --no-typescript --oxlint",
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
+    "check": "npm run typecheck && npm run lint && npm run format:check",
+    "test": "npm run check && npm run build && node --import tsx --test tests/*.test.js"
+  },
+  "dependencies": {
+    "@primer/octicons-react": "^19.38.0",
+    "@stylexjs/stylex": "^0.19.1",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@dakdevs/oxlint-plugin": "https://codeload.github.com/dakdevs/oxlint-plugin/tar.gz/bb28d5221edb256319ea383b92e8073c1836c6f0",
+    "@effect/tsgo": "0.38.0",
+    "@stylexjs/unplugin": "^0.19.1",
+    "@types/chrome": "^0.3.4",
+    "@types/node": "^26.6.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "esbuild": "^0.28.2",
+    "oxfmt": "^0.71.0",
+    "oxlint": "1.80.0",
+    "oxlint-tsgolint": "7.0.2001",
+    "playwright": "1.62.1",
+    "tsx": "4.23.12",
+    "typescript": "7.0.2",
+    "unplugin": "^2.3.11"
+  },
+  "engines": {
+    "node": ">=22.18.0"
+  }
+}
