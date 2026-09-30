@@ -7,6 +7,7 @@ import { styles } from './styles'
 import { RepositoryMenu } from './RepositoryMenu'
 import { extractRepositoryNavigation } from './repository-navigation'
 import { createStickyBar } from './sticky-bar'
+import { currentViewer, usePullRequestCounts } from './pull-request-counts'
 import {
   PIN_PREFIX,
   DESTINATION_PREFIX,
@@ -89,6 +90,46 @@ function OwnerAvatar({ owner }: { owner: string }) {
         {...props(styles.avatar)}
       />
     </picture>
+  )
+}
+
+function personalPullRequests(count: number | null | undefined, name: string) {
+  if (count === undefined || count === null || count <= 0) {
+    return null
+  }
+
+  return {
+    count,
+    description: `${count} open pull ${count === 1 ? 'request' : 'requests'} authored by you in ${name}.`,
+  }
+}
+
+function RepositoryLabel({
+  repository,
+  selected,
+  count,
+}: {
+  repository: string
+  selected: boolean
+  count: number | undefined
+}) {
+  return (
+    <span {...props(styles.labelGroup)}>
+      <span {...props(styles.labelRow)}>
+        <span data-content={repository} {...props(styles.name, selected && styles.selectedName)}>
+          {repository}
+        </span>
+        {count !== undefined && (
+          <span data-ghpin-pr-count="" aria-hidden="true" {...props(styles.counter)}>
+            {count}
+          </span>
+        )}
+      </span>
+      <span aria-hidden="true" {...props(styles.labelRow, styles.labelReserve)}>
+        <span {...props(styles.name, styles.selectedName)}>{repository}</span>
+        {count !== undefined && <span {...props(styles.counter)}>{count}</span>}
+      </span>
+    </span>
   )
 }
 
@@ -295,9 +336,13 @@ async function resetUnavailableDestination(name: string, result: NavResult) {
 function RepoBar({
   current,
   navigation,
+  viewer,
+  route,
 }: {
   current: string | null
   navigation: NavResult | null
+  viewer: string | null
+  route: string
 }) {
   const [pins, setPins] = useState<Pin[]>([])
 
@@ -337,6 +382,16 @@ function RepoBar({
   ) {
     entries.push({ name: current, temporary: true })
   }
+
+  const counts = usePullRequestCounts(
+    entries
+      .map(({ name }) => {
+        return name
+      })
+      .join(','),
+    viewer,
+    route,
+  )
 
   useEffect(() => {
     let latestRequest = 0
@@ -534,6 +589,8 @@ function RepoBar({
 
           const selected = key === currentKey
 
+          const pullRequests = personalPullRequests(counts[key], name)
+
           const action = `Pin ${name}`
 
           function openMenu(
@@ -579,18 +636,23 @@ function RepoBar({
                 onContextMenu={openMenu}
                 href={`https://github.com/${name}${destinations[key] ?? ''}`}
                 aria-label={`Open ${name}`}
+                aria-describedby={pullRequests === null ? undefined : `ghpin-count-${key}`}
                 title={`Open ${name}`}
                 onKeyDown={menuKeyDown}
                 aria-current={selected ? 'page' : undefined}
                 {...props(styles.link, temporary && styles.splitLink)}
               >
                 <OwnerAvatar owner={owner} />
-                <span
-                  data-content={repository}
-                  {...props(styles.name, selected && styles.selectedName)}
-                >
-                  {repository}
-                </span>
+                <RepositoryLabel
+                  repository={repository}
+                  selected={selected}
+                  count={pullRequests?.count}
+                />
+                {pullRequests !== null && (
+                  <span id={`ghpin-count-${key}`} {...props(styles.status)}>
+                    {pullRequests.description}
+                  </span>
+                )}
               </a>
               {temporary && (
                 <button
@@ -678,6 +740,7 @@ const root = createRoot(host)
 const sticky = createStickyBar(host)
 let previousCurrent: string | null | undefined
 let previousNavigationContext: string | undefined
+let previousViewer: string | null | undefined
 let scheduled = false
 
 function update() {
@@ -694,6 +757,8 @@ function update() {
 
   const navigationContext = `${location.pathname}${location.search}\n${JSON.stringify(navigation)}`
 
+  const viewer = currentViewer(document)
+
   if (current !== previousCurrent) {
     document.dispatchEvent(new Event('ghpin:relocating'))
 
@@ -702,10 +767,19 @@ function update() {
     previousCurrent = current
   }
 
-  if (navigationContext !== previousNavigationContext) {
+  if (navigationContext !== previousNavigationContext || viewer !== previousViewer) {
     previousNavigationContext = navigationContext
 
-    root.render(<RepoBar current={current} navigation={navigation} />)
+    previousViewer = viewer
+
+    root.render(
+      <RepoBar
+        current={current}
+        navigation={navigation}
+        viewer={viewer}
+        route={`${location.pathname}${location.search}`}
+      />,
+    )
   }
 }
 

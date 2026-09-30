@@ -24,6 +24,8 @@ Right-click a saved tab, or focus it and press **Shift+F10**, then choose **Unpi
 
 Each tab shows the owner's GitHub avatar beside the repository name. Full `owner/repo` names remain in link destinations, accessible labels, tooltips, and storage, so repositories with the same name remain distinct. Avatars load from GitHub's public owner-image URLs; a small person icon replaces an unavailable image. Pin and unpin icons come directly from the official `@primer/octicons-react` package.
 
+A counter after the repository name shows your open pull requests when GitHub provides a verified positive total for your signed-in account. It follows GitHub's native author filter, which also includes pull requests opened by Copilot on your behalf; see [GitHub's author-search announcement](https://github.blog/changelog/2026-06-18-copilot-authored-pull-requests-now-included-in-author-searches/). Zero, loading, unavailable, and signed-out results leave the badge hidden. Counts are kept in memory separately from pins and destination preferences.
+
 The current repository keeps its selected underline throughout its subpages. Shortcuts initially open the repository's home page. Right-click a tab, or focus it and press **Shift+F10**, to choose where future clicks go. The menu lists only sections found in that repository's actual GitHub navigation. Selecting a section saves the preference without navigating or pinning a temporary tab. The preference uses the full `owner/repo` identity and updates across open GitHub tabs.
 
 If a successful inspection finds the chosen section is no longer available, its saved destination is permanently reset to **Repo home**. A failed or incomplete inspection keeps the saved preference and offers a home-page fallback. Other repositories' preferences and pins are retained.
@@ -54,7 +56,7 @@ npx playwright install chromium
 npm test
 ```
 
-The suite loads the actual built Manifest V3 extension into isolated Chromium profiles. It verifies persistence, concurrent pins, temporary and selected states, split hover/focus, confirmation cancellation and modal focus, enabled-section discovery, saved destinations and permanent resets, context-menu keyboard controls, sticky layout, soft navigation, header/body replacement, themes, and narrow-screen overflow. It writes fixture previews to `tests/artifacts/`.
+The suite loads the actual built Manifest V3 extension into isolated Chromium profiles. It verifies persistence, concurrent pins, temporary and selected states, split hover/focus, confirmation cancellation and modal focus, enabled-section discovery, saved destinations and permanent resets, personal PR counts and account changes, context-menu keyboard controls, sticky layout, soft navigation, header/body replacement, themes, and narrow-screen overflow. It writes fixture previews to `tests/artifacts/`.
 
 Run **Oxfmt** with `npm run format` to format maintained files, or `npm run format:check` to check them. Its initializer settings use single quotes and omit semicolons. Run **Oxlint** with `npm run lint`; the lint configuration uses the default `defineConfig()` settings from `@dakdevs/oxlint-plugin`. The plugin is pinned to its GitHub revision in the lockfile.
 
@@ -62,20 +64,22 @@ Run **Oxfmt** with `npm run format` to format maintained files, or `npm run form
 
 ## Implementation
 
-- `src/content.tsx` mounts a React root and renders the switcher. GitHub repository metadata must agree with the URL, with a matching repository-header link as a fallback. `src/repository-store.ts` parses stored data with Zod at the extension-storage boundary. Schemas are constructed once at module scope after `z.config({ jitless: true })`, because Manifest V3 blocks runtime compilation; see [Zod's CSP guidance](https://zod.dev/compile#content-security-policy).
-- `src/styles.ts` recreates Primer's UnderlineNav and confirmation-dialog appearance using GitHub's CSS variables. The dashed temporary border and the current-repository underline are independent.
+- `src/content.tsx` mounts a React root and renders the switcher. GitHub repository metadata must agree with the URL, with a matching repository-header link as a fallback. `src/repository-store.ts` parses stored data with Zod at the extension-storage boundary. Schemas are constructed once at module scope after `src/zod.ts` sets `z.config({ jitless: true })`, because Manifest V3 blocks runtime compilation; see [Zod's CSP guidance](https://zod.dev/compile#content-security-policy).
+- `src/styles.ts` recreates Primer's UnderlineNav, counters, and confirmation-dialog appearance using GitHub's CSS variables. The dashed temporary border and the current-repository underline are independent.
 - `src/RepositoryMenu.tsx` renders the destination menu; `src/repository-navigation.ts` reads actual GitHub navigation from the current DOM or a same-origin authenticated fetch. Fetched HTML is parsed in a detached document and never injected or executed. Availability is refreshed on menu use and repository visits; concurrent requests are bounded and deduplicated.
+- `src/pull-request-counts.ts` reads the signed-in viewer and fetches GitHub's native `/<owner>/<repo>/pulls/<viewer>` route with same-origin credentials. It validates the response's viewer, repository, route, and author filter before using the complete filtered `openCount`. Counts use a one-minute in-memory cache, deduplicated pending requests, and at most two concurrent fetches. Stale results refresh on relevant navigation, focus, or visibility changes; account changes abort pending work and discard the cache. GitHub's UI internals can change, so unrecognized responses or denied authentication leave the counter hidden.
 - `src/sticky-bar.ts` keeps the bar fixed at the viewport top, reserves its height with a placeholder at the start of the body, and offsets overlapping native sticky navigation.
 - `build.mjs` uses esbuild and the official StyleX unplugin to produce `dist/content.js`, `dist/content.css`, and `dist/manifest.json`.
 - Each permanent repository has its own `chrome.storage.local` key. There is no shared array that concurrent tabs can overwrite. Destination writes and automatic reset read/remove sequences share a per-repository Web Lock across normal GitHub tabs.
 - The content script observes GitHub's Turbo events, DOM replacement, and the browser's navigation events to update the current repository and restore the same React root without duplicate strips.
 
-The extension requests only `storage` and runs only on `https://github.com/*`. Section discovery reads GitHub repository pages in the current browser's access context. It requires no API token or server. GitHub Enterprise hosts are outside this version's scope. Removing the extension removes its pins and destination preferences.
+The extension requests only `storage` and runs only on `https://github.com/*`. Section discovery and personal PR counts read GitHub repository pages in the current browser's access context. It requires no API token or server. GitHub Enterprise hosts are outside this version's scope. Removing the extension removes its pins and destination preferences.
 
 ## Design and platform references
 
 - [Primer UnderlineNav](https://primer.style/product/components/underline-nav/) and its [official shared styles](https://github.com/primer/react/blob/main/packages/react/src/internal/components/UnderlineTabbedInterface.module.css) provide the navigation dimensions, neutral hover treatment, semibold selected label, coral underline, and inset focus ring.
 - [Primer navigation accessibility](https://primer.style/product/components/underline-nav/accessibility/) supports a named navigation landmark, list, real links, and `aria-current`.
+- [Primer's native Counter styles](https://github.com/primer/view_components/blob/main/app/components/primer/beta/counter.pcss) provide the PR badge dimensions and theme colors. The link's accessible description explains the personal count, following [CounterLabel accessibility guidance](https://primer.style/product/components/counter-label/accessibility/).
 - [Primer Dialog](https://primer.style/product/components/dialog/) and its [accessibility guidance](https://primer.style/product/components/dialog/accessibility/) provide the confirmation layout, dismissal, and focus behavior. A native HTML dialog supplies modal focus containment and background inertness; its content is rendered in React and styled in StyleX.
 - [GitHub Octicons](https://primer.style/octicons/) provide the pin and pin-slash icons.
 - [StyleX's esbuild integration](https://stylexjs.com/docs/learn/installation/esbuild/) provides the build-time CSS extraction.

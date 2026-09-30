@@ -1,8 +1,8 @@
 /**
- * @typedef {{ label: string, section: string, href?: string, disabled?: boolean }} NavigationItem
+ * @typedef {{ label: string, section: string, href?: string, disabled?: boolean, count?: number }} NavigationItem
  * @typedef {{ repo?: string | null, metadata?: string | null, theme?: string, header?: string,
  * navigation?: NavigationItem[], controls?: boolean, tall?: boolean, nativeSticky?: boolean,
- * nativeFixed?: boolean }} FixtureOptions
+ * nativeFixed?: boolean, viewer?: string, ownerLogin?: string }} FixtureOptions
  */
 
 const defaultNavigation = [
@@ -19,7 +19,7 @@ function repositoryNavigation(repo, items = defaultNavigation) {
   }
 
   const links = items.map((item) => {
-    return `<a href="${item.href ?? `/${repo}${item.section}`}" ${item.disabled === true ? 'aria-disabled="true"' : ''}>${item.label}</a>`
+    return `<a href="${item.href ?? `/${repo}${item.section}`}" ${item.disabled === true ? 'aria-disabled="true"' : ''}>${item.label}${item.count === undefined ? '' : `<span class="Counter" data-component="counter" aria-hidden="true">${item.count}</span>`}</a>`
   })
 
   return `<nav class="repo-nav" aria-label="Repository">${links.join('')}</nav>`
@@ -57,7 +57,7 @@ function repositoryHeader(repo, header, repoNavigation) {
 
 /** @param {FixtureOptions} [options] */
 export function fixture(options = {}) {
-  const { repo, theme, header, controls, tall, nativeSticky, nativeFixed } = {
+  const { repo, theme, header, controls, tall, nativeSticky, nativeFixed, viewer, ownerLogin } = {
     repo: null,
     theme: 'light',
     header: 'GlobalNav',
@@ -72,6 +72,8 @@ export function fixture(options = {}) {
     <html lang="en" data-color-mode="${theme}" data-light-theme="light" data-dark-theme="dark">
     <head><meta charset="utf-8"><title>GitHub fixture</title>
     ${metadata === null ? '' : `<meta name="octolytics-dimension-repository_nwo" content="${metadata}">`}
+    ${viewer === undefined ? '' : `<meta name="user-login" content="${viewer}">`}
+    ${ownerLogin === undefined ? '' : `<meta name="octolytics-dimension-user_login" content="${ownerLogin}">`}
     <style>
       :root {
         --bgColor-default: #ffffff; --bgColor-muted: #f6f8fa;

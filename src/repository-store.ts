@@ -1,8 +1,4 @@
-import { z } from 'zod'
-
-// MV3 blocks runtime code generation. Set this before constructing schemas so
-// Zod skips its eval probe as well as its optional compiler fast path.
-z.config({ jitless: true })
+import { z } from './zod'
 
 export const PIN_PREFIX = 'ghpin:'
 export const DESTINATION_PREFIX = 'ghpin-destination:'

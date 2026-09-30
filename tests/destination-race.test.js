@@ -1,36 +1,17 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { browser, expectPinned } from './harness'
+import { extensionWorld } from './extension-world'
 
 /** @param {import('playwright').Page} page */
 async function pauseNextDestinationRead(page) {
-  const session = await page.context().newCDPSession(page)
+  const { session, contextId } = await extensionWorld(page)
 
-  /** @type {number[]} */
-  const contexts = []
-
-  session.on('Runtime.executionContextCreated', ({ context }) => {
-    contexts.push(context.id)
-  })
-
-  await session.send('Runtime.enable')
-
-  for (const contextId of contexts) {
-    const probe = await session.send('Runtime.evaluate', {
-      contextId,
-      expression: "typeof chrome === 'object' && Boolean(chrome.runtime?.id)",
-      returnByValue: true,
-    })
-
-    if (probe.result.value !== true) {
-      continue
-    }
-
-    // Capture an actual Chrome storage snapshot, then hold its delivery. The
-    // extension still performs every read, write, reset, and UI interaction.
-    const installed = await session.send('Runtime.evaluate', {
-      contextId,
-      expression: `(async () => {
+  // Capture an actual Chrome storage snapshot, then hold its delivery. The
+  // extension still performs every read, write, reset, and UI interaction.
+  const installed = await session.send('Runtime.evaluate', {
+    contextId,
+    expression: `(async () => {
         const key = 'ghpin-destination:acme/rocket';
         await navigator.locks.request(chrome.runtime.id + ':' + key, () => undefined);
         const originalGet = chrome.storage.local.get.bind(chrome.storage.local);
@@ -50,16 +31,13 @@ async function pauseNextDestinationRead(page) {
         };
         return true;
       })()`,
-      awaitPromise: true,
-      returnByValue: true,
-    })
+    awaitPromise: true,
+    returnByValue: true,
+  })
 
-    assert.equal(installed.result.value, true)
+  assert.equal(installed.result.value, true)
 
-    return { session, contextId }
-  }
-
-  throw new Error('The actual extension content-script execution context was not found')
+  return { session, contextId }
 }
 
 async function destinationWriteIsQueued() {

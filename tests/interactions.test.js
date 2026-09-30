@@ -468,6 +468,8 @@ await test('repository destination menus use actual navigation, preserve pin sta
 
   await menu.waitFor()
 
+  await menu.getByText('Loading repository pages…', { exact: true }).waitFor({ state: 'hidden' })
+
   assert.equal(
     await menu.getByRole('menuitem', { name: 'Unpin repository', exact: true }).count(),
     0,
@@ -550,6 +552,8 @@ await test('repository destination menus use actual navigation, preserve pin sta
   await acmeLink.click({ button: 'right' })
 
   await menu.waitFor()
+
+  await menu.getByText('Loading repository pages…', { exact: true }).waitFor({ state: 'hidden' })
 
   assert.equal(await menu.getByRole('menuitemradio', { name: 'Issues', exact: true }).count(), 0)
 
