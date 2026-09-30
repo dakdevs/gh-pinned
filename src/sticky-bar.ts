@@ -70,6 +70,8 @@ export function createStickyBar(host: HTMLElement) {
 
   const offsetClass = props(styles.nativeStickyOffset).className ?? ''
 
+  let fileTreeFrame: number | null = null
+
   let scrollPadding: {
     element: HTMLElement
     value: string
@@ -257,6 +259,76 @@ export function createStickyBar(host: HTMLElement) {
     offsetNativeHeaders(height)
   }
 
+  function followFileTreeNavigation(event: MouseEvent | KeyboardEvent) {
+    if (
+      event instanceof MouseEvent
+        ? event.metaKey || event.ctrlKey || event.button !== 0
+        : !['Enter', ' '].includes(event.key)
+    ) {
+      return
+    }
+
+    const row =
+      event.target instanceof Element
+        ? event.target.closest('#pr-file-tree [role="treeitem"]')
+        : null
+
+    const link = row?.querySelector<HTMLAnchorElement>('a[href^="#diff-"]')
+
+    // Folder rows contain child rows. Only follow the activated file's link.
+    if (
+      !link ||
+      link.closest('[role="treeitem"]') !== row ||
+      (event instanceof KeyboardEvent && document.activeElement !== row)
+    ) {
+      return
+    }
+
+    const hash = link.hash
+
+    const route = `${location.pathname}${location.search}`
+
+    if (fileTreeFrame !== null) {
+      cancelAnimationFrame(fileTreeFrame)
+    }
+
+    // GitHub updates history, then scrolls numerically in its next frame,
+    // bypassing scroll padding. Observe the action without replacing it.
+    fileTreeFrame = requestAnimationFrame(() => {
+      fileTreeFrame = requestAnimationFrame(() => {
+        fileTreeFrame = null
+
+        if (location.hash !== hash || `${location.pathname}${location.search}` !== route) {
+          return
+        }
+
+        const target = document.querySelector(`#${CSS.escape(hash.slice(1))}`)
+
+        if (!target) {
+          return
+        }
+
+        sync()
+
+        const height = host.getBoundingClientRect().height
+
+        const top = target.getBoundingClientRect().top
+
+        const covered =
+          top < height ||
+          [...offsetHeaders.keys()].some((header) => {
+            const bounds = header.getBoundingClientRect()
+
+            return bounds.top <= top && top < bounds.bottom
+          })
+
+        if (height > 0 && top >= 0 && covered) {
+          window.scrollBy({ top: -height, behavior: 'instant' })
+        }
+      })
+    })
+  }
+
   function sync() {
     const body = document.body
 
@@ -294,6 +366,13 @@ export function createStickyBar(host: HTMLElement) {
   window.addEventListener('scroll', schedule, { passive: true })
 
   window.addEventListener('resize', schedule)
+
+  document.addEventListener('click', followFileTreeNavigation, { capture: true, passive: true })
+
+  document.addEventListener('keydown', followFileTreeNavigation, {
+    capture: true,
+    passive: true,
+  })
 
   new ResizeObserver(schedule).observe(host)
 
