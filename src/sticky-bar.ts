@@ -70,6 +70,104 @@ export function createStickyBar(host: HTMLElement) {
 
   const offsetClass = props(styles.nativeStickyOffset).className ?? ''
 
+  let scrollPadding: {
+    element: HTMLElement
+    value: string
+    priority: string
+    applied: string
+    following: string[]
+  } | null = null
+
+  function restoreScrollPadding() {
+    if (scrollPadding === null) {
+      return
+    }
+
+    const { element, value, priority, applied, following } = scrollPadding
+
+    // Keep a newer declaration if GitHub replaced our override.
+    if (
+      element.style.getPropertyValue('scroll-padding-top') === applied &&
+      element.style.getPropertyPriority('scroll-padding-top') === 'important'
+    ) {
+      const properties = Array.from(element.style)
+
+      const index = properties.indexOf('scroll-padding-top')
+
+      const followers = properties
+        .filter((property, position) => {
+          return (
+            property !== 'scroll-padding-top' &&
+            property.startsWith('scroll-padding') &&
+            (following.includes(property) || position > index)
+          )
+        })
+        .map((property) => {
+          return {
+            property,
+            value: element.style.getPropertyValue(property),
+            priority: element.style.getPropertyPriority(property),
+          }
+        })
+
+      if (value) {
+        element.style.setProperty('scroll-padding-top', value, priority)
+      } else {
+        element.style.removeProperty('scroll-padding-top')
+      }
+
+      // setProperty moves a declaration last. Keep native logical padding's
+      // precedence without restoring stale values or touching unrelated styles.
+      for (const follower of followers) {
+        element.style.removeProperty(follower.property)
+
+        element.style.setProperty(follower.property, follower.value, follower.priority)
+      }
+    }
+
+    scrollPadding = null
+  }
+
+  function syncScrollPadding(height: number) {
+    // Root scroll padding applies to the viewport. Body padding does not.
+    // Sample GitHub's native value without our previous addition.
+    restoreScrollPadding()
+
+    if (height === 0) {
+      return
+    }
+
+    const element = document.documentElement
+
+    const value = element.style.getPropertyValue('scroll-padding-top')
+
+    const priority = element.style.getPropertyPriority('scroll-padding-top')
+
+    const native = getComputedStyle(element).scrollPaddingTop
+
+    const properties = Array.from(element.style)
+
+    const following = properties
+      .slice(properties.indexOf('scroll-padding-top') + 1)
+      .filter((property) => {
+        return property.startsWith('scroll-padding')
+      })
+
+    element.style.setProperty(
+      'scroll-padding-top',
+      `calc(${native === 'auto' ? '0px' : native} + ${height}px)`,
+      'important',
+    )
+
+    scrollPadding = {
+      element,
+      value,
+      priority,
+      applied: element.style.getPropertyValue('scroll-padding-top'),
+      following,
+    }
+  }
+
   function restoreHeader(element: HTMLElement, original: HeaderOffset) {
     element.classList.remove(offsetClass)
 
@@ -175,6 +273,8 @@ export function createStickyBar(host: HTMLElement) {
     slot.style.setProperty('--ghpin-slot-height', `${height}px`)
 
     syncNativeHeaders(height)
+
+    syncScrollPadding(height)
   }
 
   function schedule() {
