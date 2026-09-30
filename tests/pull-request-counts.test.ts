@@ -2,16 +2,15 @@ import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import { test } from 'node:test'
+import type { Locator, Page, Route } from 'playwright'
 import { artifactsPath, browser, expectPinned } from './harness'
 import { gate, paintSettledResponse, pullRequestsPage } from './pr-count-fixtures'
 
-/** @param {import('playwright').Page} page @param {string} name */
-function repoLink(page, name) {
+function repoLink(page: Page, name: string) {
   return page.locator('#ghpin-bar').getByRole('link', { name: `Open ${name}`, exact: true })
 }
 
-/** @param {import('playwright').Page} page @param {string} name @param {string} text */
-async function expectCount(page, name, text) {
+async function expectCount(page: Page, name: string, text: string) {
   await page.waitForFunction(
     ({ name, text }) => {
       return (
@@ -31,8 +30,7 @@ async function expectCount(page, name, text) {
   return badge
 }
 
-/** @param {import('playwright').Page} page @param {string} name */
-async function expectNoCount(page, name) {
+async function expectNoCount(page: Page, name: string) {
   const link = repoLink(page, name)
 
   assert.equal(await link.locator('[data-ghpin-pr-count]').count(), 0)
@@ -40,37 +38,51 @@ async function expectNoCount(page, name) {
   assert.equal(await link.getAttribute('aria-describedby'), null)
 }
 
-/** @param {import('playwright').Locator} link */
-function segmentBackgrounds(link) {
+function segmentBackgrounds(link: Locator) {
   return link.locator('..').evaluate((tab) => {
+    const anchor = tab.querySelector('a')
+
+    const action = tab.querySelector('button')
+
+    if (anchor === null || action === null) {
+      throw new Error('A temporary repository tab must have both segments')
+    }
+
     return {
       row: getComputedStyle(tab).backgroundColor,
-      link: getComputedStyle(tab.querySelector('a')).backgroundColor,
-      action: getComputedStyle(tab.querySelector('button')).backgroundColor,
+      link: getComputedStyle(anchor).backgroundColor,
+      action: getComputedStyle(action).backgroundColor,
     }
   })
 }
 
-/** @param {import('playwright').Page} page @param {import('playwright').Locator} link
- * @param {{row: string, link: string, action: string}} expected */
-async function expectSegmentBackgrounds(page, link, expected) {
+async function expectSegmentBackgrounds(
+  page: Page,
+  link: Locator,
+  expected: Awaited<ReturnType<typeof segmentBackgrounds>>,
+) {
   await page.waitForFunction((expected) => {
     const anchor = document.querySelector('#ghpin-bar a[aria-label="Open acme/rocket"]')
 
-    const tab = anchor.parentElement
+    const tab = anchor?.parentElement
+
+    const action = tab?.querySelector('button')
+
+    if (!anchor || !tab || !action) {
+      return false
+    }
 
     return (
       getComputedStyle(tab).backgroundColor === expected.row &&
       getComputedStyle(anchor).backgroundColor === expected.link &&
-      getComputedStyle(tab.querySelector('button')).backgroundColor === expected.action
+      getComputedStyle(action).backgroundColor === expected.action
     )
   }, expected)
 
   assert.deepEqual(await segmentBackgrounds(link), expected)
 }
 
-/** @param {import('playwright').Page} page @param {string} name */
-async function countDescription(page, name) {
+async function countDescription(page: Page, name: string) {
   const id = await repoLink(page, name).getAttribute('aria-describedby')
 
   assert.ok(
@@ -81,13 +93,92 @@ async function countDescription(page, name) {
   return page.locator(`[id="${id}"]`).textContent()
 }
 
-/** @param {{repo: string, status: number, body: string}[]} entries @param {string[]} requested */
-function unavailableRoute(entries, requested) {
-  /** @param {import('playwright').Route} route */
-  return (route) => {
+function countGeometry(badge: Locator) {
+  return badge.evaluate((badge) => {
+    const badgeBox = badge.getBoundingClientRect()
+
+    const anchor = badge.closest('a')
+
+    const previous = badge.previousElementSibling
+
+    if (anchor === null || previous === null) {
+      throw new Error('The counter must follow the repository name inside its anchor')
+    }
+
+    const linkBox = anchor.getBoundingClientRect()
+
+    return {
+      previousText: previous.textContent,
+      parentTag: anchor.tagName,
+      top: badgeBox.top,
+      bottom: badgeBox.bottom,
+      linkTop: linkBox.top,
+      linkBottom: linkBox.bottom,
+      centersDiffer: Math.abs(
+        badgeBox.top + badgeBox.height / 2 - linkBox.top - linkBox.height / 2,
+      ),
+      color: getComputedStyle(badge).color,
+      background: getComputedStyle(badge).backgroundColor,
+    }
+  })
+}
+
+function unavailableTraffic() {
+  const cases = [
+    {
+      repo: 'cases/zero',
+      status: 200,
+      body: pullRequestsPage({ repo: 'cases/zero', viewer: 'alice', openCount: 0 }),
+    },
+    { repo: 'cases/private', status: 404, body: '<h1>Page not found</h1>' },
+    {
+      repo: 'cases/failure',
+      status: 503,
+      body: pullRequestsPage({ repo: 'cases/failure', viewer: 'alice', openCount: 47 }),
+    },
+    {
+      repo: 'cases/login',
+      status: 200,
+      body: '<meta name="user-login" content=""><h1>Sign in to GitHub</h1>',
+    },
+    {
+      repo: 'cases/incomplete',
+      status: 200,
+      body: pullRequestsPage({ repo: 'cases/incomplete', viewer: 'alice' }),
+    },
+    {
+      repo: 'cases/filter',
+      status: 200,
+      body: pullRequestsPage({
+        repo: 'cases/filter',
+        viewer: 'alice',
+        openCount: 47,
+        filter: 'is:pr state:open author:alice created:banana',
+      }),
+    },
+    {
+      repo: 'cases/identity',
+      status: 200,
+      body: pullRequestsPage({
+        repo: 'cases/identity',
+        viewer: 'alice',
+        openCount: 47,
+        layoutRepo: 'other/repository',
+      }),
+    },
+    {
+      repo: 'cases/string',
+      status: 200,
+      body: pullRequestsPage({ repo: 'cases/string', viewer: 'alice', openCount: '47' }),
+    },
+  ]
+
+  const requested: string[] = []
+
+  function handler(route: Route) {
     requested.push(route.request().url())
 
-    const candidate = entries.find(({ repo }) => {
+    const candidate = cases.find(({ repo }) => {
       return route.request().url() === `https://github.com/${repo}/pulls/alice`
     })
 
@@ -99,23 +190,8 @@ function unavailableRoute(entries, requested) {
         pullRequestsPage({ repo: 'cases/signed-out', viewer: 'cases', openCount: 47 }),
     })
   }
-}
 
-/** @param {{wait: ReturnType<typeof gate>, count: number}[]} replies */
-function accountReplies(replies) {
-  /** @param {import('playwright').Route} route */
-  return async (route) => {
-    const reply = replies.shift()
-
-    assert.ok(reply, 'An account fetch must have a controlled response')
-
-    await reply.wait.promise
-
-    await route.fulfill({
-      contentType: 'text/html',
-      body: pullRequestsPage({ repo: 'acme/rocket', viewer: 'alice', openCount: reply.count }),
-    })
-  }
+  return { cases, requested, handler }
 }
 
 await test('authored open PR counters show full filtered totals on temporary and saved anchors without changing Pin interactions', async (t) => {
@@ -189,27 +265,9 @@ await test('authored open PR counters show full filtered totals on temporary and
     '12222 open pull requests authored by you in acme/rocket.',
   )
 
-  assert.ok((await link.getAttribute('title')).includes('acme/rocket'))
+  assert.ok((await link.getAttribute('title'))?.includes('acme/rocket') === true)
 
-  const geometry = await badge.evaluate((badge) => {
-    const badgeBox = badge.getBoundingClientRect()
-
-    const linkBox = badge.closest('a').getBoundingClientRect()
-
-    return {
-      previousText: badge.previousElementSibling.textContent,
-      parentTag: badge.closest('a').tagName,
-      top: badgeBox.top,
-      bottom: badgeBox.bottom,
-      linkTop: linkBox.top,
-      linkBottom: linkBox.bottom,
-      centersDiffer: Math.abs(
-        badgeBox.top + badgeBox.height / 2 - linkBox.top - linkBox.height / 2,
-      ),
-      color: getComputedStyle(badge).color,
-      background: getComputedStyle(badge).backgroundColor,
-    }
-  })
+  const geometry = await countGeometry(badge)
 
   assert.equal(geometry.previousText, 'rocket')
 
@@ -322,106 +380,57 @@ await test('authored open PR counters show full filtered totals on temporary and
   assert.equal(await repoLink(page, 'octo/tools').getAttribute('aria-current'), 'page')
 })
 
-await test(
-  'zero, unavailable, and unverified authored PR results omit the counter and description',
-  /** @param {import('node:test').TestContext} t */ async (t) => {
-    const cases = [
-      {
-        repo: 'cases/zero',
-        status: 200,
-        body: pullRequestsPage({ repo: 'cases/zero', viewer: 'alice', openCount: 0 }),
-      },
-      { repo: 'cases/private', status: 404, body: '<h1>Page not found</h1>' },
-      {
-        repo: 'cases/failure',
-        status: 503,
-        body: pullRequestsPage({ repo: 'cases/failure', viewer: 'alice', openCount: 47 }),
-      },
-      {
-        repo: 'cases/login',
-        status: 200,
-        body: '<meta name="user-login" content=""><h1>Sign in to GitHub</h1>',
-      },
-      {
-        repo: 'cases/incomplete',
-        status: 200,
-        body: pullRequestsPage({ repo: 'cases/incomplete', viewer: 'alice' }),
-      },
-      {
-        repo: 'cases/filter',
-        status: 200,
-        body: pullRequestsPage({
-          repo: 'cases/filter',
-          viewer: 'alice',
-          openCount: 47,
-          filter: 'is:pr state:open author:alice created:banana',
-        }),
-      },
-      {
-        repo: 'cases/identity',
-        status: 200,
-        body: pullRequestsPage({
-          repo: 'cases/identity',
-          viewer: 'alice',
-          openCount: 47,
-          layoutRepo: 'other/repository',
-        }),
-      },
-      {
-        repo: 'cases/string',
-        status: 200,
-        body: pullRequestsPage({ repo: 'cases/string', viewer: 'alice', openCount: '47' }),
-      },
-    ]
+await test('zero, unavailable, and unverified authored PR results omit the counter and description', async (t) => {
+  const { cases, requested, handler } = unavailableTraffic()
 
-    /** @type {Parameters<typeof browser>[1]} */
-    const fixtures = new Map([
-      ...cases.map(({ repo }) => {
-        return [`/${repo}`, { repo, viewer: 'alice', ownerLogin: 'cases' }]
-      }),
-      ['/cases/signed-out', { repo: 'cases/signed-out', viewer: '', ownerLogin: 'cases' }],
-    ])
+  const fixtures: Parameters<typeof browser>[1] = new Map()
 
-    const context = await browser(t, fixtures)
+  for (const { repo } of cases) {
+    fixtures.set(`/${repo}`, { repo, viewer: 'alice', ownerLogin: 'cases' })
+  }
 
-    /** @type {string[]} */
-    const requested = []
+  fixtures.set('/cases/signed-out', {
+    repo: 'cases/signed-out',
+    viewer: '',
+    ownerLogin: 'cases',
+  })
 
-    await context.route('https://github.com/cases/*/pulls/*', unavailableRoute(cases, requested))
+  const context = await browser(t, fixtures)
 
-    const page = await context.newPage()
+  await context.route('https://github.com/cases/*/pulls/*', handler)
 
-    for (const { repo } of cases) {
-      const response = page.waitForResponse(`https://github.com/${repo}/pulls/alice`)
+  const page = await context.newPage()
 
-      await page.goto(`https://github.com/${repo}`)
+  for (const { repo } of cases) {
+    const response = page.waitForResponse(`https://github.com/${repo}/pulls/alice`)
 
-      await repoLink(page, repo).waitFor()
+    await page.goto(`https://github.com/${repo}`)
 
-      await paintSettledResponse(page, await response)
+    await repoLink(page, repo).waitFor()
 
-      await expectNoCount(page, repo)
+    await paintSettledResponse(page, await response)
 
-      assert.equal(await page.getByRole('button', { name: `Pin ${repo}`, exact: true }).count(), 1)
-    }
+    await expectNoCount(page, repo)
 
-    await page.goto('https://github.com/cases/signed-out')
+    assert.equal(await page.getByRole('button', { name: `Pin ${repo}`, exact: true }).count(), 1)
+  }
 
-    await repoLink(page, 'cases/signed-out').waitFor()
+  await page.goto('https://github.com/cases/signed-out')
 
-    await page.waitForLoadState('networkidle')
+  await repoLink(page, 'cases/signed-out').waitFor()
 
-    await expectNoCount(page, 'cases/signed-out')
+  await page.waitForLoadState('networkidle')
 
-    assert.equal(
-      requested.includes('https://github.com/cases/signed-out/pulls/cases'),
-      false,
-      'Repository owner metadata must not be used as viewer identity',
-    )
+  await expectNoCount(page, 'cases/signed-out')
 
-    assert.equal(requested.length, 8)
-  },
-)
+  assert.equal(
+    requested.includes('https://github.com/cases/signed-out/pulls/cases'),
+    false,
+    'Repository owner metadata must not be used as viewer identity',
+  )
+
+  assert.equal(requested.length, 8)
+})
 
 await test('viewer changes discard an older authored PR response and signed-out tabs clear personal counts', async (t) => {
   const context = await browser(
@@ -435,14 +444,24 @@ await test('viewer changes discard an older authored PR response and signed-out 
 
   const secondReturn = gate()
 
-  await context.route(
-    'https://github.com/acme/rocket/pulls/alice',
-    accountReplies([
-      { wait: oldAccount, count: 47 },
-      { wait: firstReturn, count: 47 },
-      { wait: secondReturn, count: 13 },
-    ]),
-  )
+  const replies = [
+    { wait: oldAccount, count: 47 },
+    { wait: firstReturn, count: 47 },
+    { wait: secondReturn, count: 13 },
+  ]
+
+  await context.route('https://github.com/acme/rocket/pulls/alice', async (route) => {
+    const reply = replies.shift()
+
+    assert.ok(reply, 'An account fetch must have a controlled response')
+
+    await reply.wait.promise
+
+    await route.fulfill({
+      contentType: 'text/html',
+      body: pullRequestsPage({ repo: 'acme/rocket', viewer: 'alice', openCount: reply.count }),
+    })
+  })
 
   const newAccount = gate()
 

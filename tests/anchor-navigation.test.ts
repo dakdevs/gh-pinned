@@ -1,3 +1,4 @@
+import type { Page } from 'playwright'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
@@ -20,30 +21,28 @@ function anchorPage() {
 
 function anchorGeometry() {
   return {
-    targetTop: document.querySelector('#anchor-target').getBoundingClientRect().top,
-    barHeight: document.querySelector('#ghpin-root').getBoundingClientRect().height,
-    nativeTop: document.querySelector('.GlobalNav').getBoundingClientRect().top,
-    nativeBottom: document.querySelector('.GlobalNav').getBoundingClientRect().bottom,
+    targetTop: window.fixtureElement('h2', '#anchor-target').getBoundingClientRect().top,
+    barHeight: window.fixtureElement('div', '#ghpin-root').getBoundingClientRect().height,
+    nativeTop: window.fixtureElement('header', '.GlobalNav').getBoundingClientRect().top,
+    nativeBottom: window.fixtureElement('header', '.GlobalNav').getBoundingClientRect().bottom,
     padding: getComputedStyle(document.documentElement).scrollPaddingTop,
-    margin: getComputedStyle(document.querySelector('#anchor-target')).scrollMarginTop,
+    margin: getComputedStyle(window.fixtureElement('h2', '#anchor-target')).scrollMarginTop,
   }
 }
 
-/** @param {import('playwright').Page} page */
-async function waitForBar(page) {
+async function waitForBar(page: Page) {
   await page.locator('#ghpin-bar').waitFor()
 
   await page.waitForFunction(() => {
-    return document.querySelector('.GlobalNav').getBoundingClientRect().top === 48
+    return window.fixtureElement('header', '.GlobalNav').getBoundingClientRect().top === 48
   })
 }
 
-/** @param {import('playwright').Page} page @param {string} phase */
-async function captureAnchorPosition(page, phase) {
+async function captureAnchorPosition(page: Page, phase: string) {
   // Anchor scrolling is native browser behavior. Allow its layout to paint,
   // then inspect the result rather than polling until a desired answer appears.
   await page.evaluate(() => {
-    return new Promise((resolve) => {
+    return new Promise<void>((resolve) => {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           resolve()
@@ -61,9 +60,11 @@ async function captureAnchorPosition(page, phase) {
   return geometry
 }
 
-/** @param {Awaited<ReturnType<typeof captureAnchorPosition>>} geometry
- * @param {string} phase @param {number} expected */
-function expectAnchorPosition(geometry, phase, expected) {
+function expectAnchorPosition(
+  geometry: Awaited<ReturnType<typeof captureAnchorPosition>>,
+  phase: string,
+  expected: number,
+) {
   assert.ok(
     geometry.targetTop >= geometry.nativeBottom,
     `${phase}: the target must clear the native header: ${JSON.stringify(geometry)}`,
@@ -75,14 +76,16 @@ function expectAnchorPosition(geometry, phase, expected) {
   )
 }
 
-/** @param {import('playwright').Page} page @param {boolean} visible */
-async function setStripVisible(page, visible) {
+async function setStripVisible(page: Page, visible: boolean) {
   await page.locator('#ghpin-root').evaluate((host, visible) => {
     host.style.display = visible ? '' : 'none'
   }, visible)
 
   await page.waitForFunction((visible) => {
-    return document.querySelector('.GlobalNav').getBoundingClientRect().top === (visible ? 48 : 0)
+    return (
+      window.fixtureElement('header', '.GlobalNav').getBoundingClientRect().top ===
+      (visible ? 48 : 0)
+    )
   }, visible)
 }
 
@@ -93,8 +96,7 @@ function inlinePadding() {
   ]
 }
 
-/** @param {import('playwright').Page} page @param {string} phase */
-async function scrollTarget(page, phase) {
+async function scrollTarget(page: Page, phase: string) {
   await page.locator('#anchor-target').evaluate((target) => {
     target.scrollIntoView({ block: 'start' })
   })
@@ -124,7 +126,7 @@ await test('native anchor navigation adds the repository strip to existing page 
   await page.evaluate(() => {
     scrollTo(0, 0)
 
-    document.querySelector('#anchor-target').scrollIntoView({ block: 'start' })
+    window.fixtureElement('h2', '#anchor-target').scrollIntoView({ block: 'start' })
   })
 
   const intoView = await captureAnchorPosition(page, 'scroll-into-view')
@@ -162,7 +164,7 @@ await test('anchor offsets follow measured strip height and restore page-owned i
   })
 
   await page.waitForFunction(() => {
-    return document.querySelector('.GlobalNav').getBoundingClientRect().top === 84
+    return window.fixtureElement('header', '.GlobalNav').getBoundingClientRect().top === 84
   })
 
   await page.locator('#anchor-target').evaluate((target) => {
@@ -182,18 +184,18 @@ await test('anchor offsets follow measured strip height and restore page-owned i
   })
 
   await page.waitForFunction(() => {
-    return document.querySelector('.GlobalNav').getBoundingClientRect().top === 0
+    return window.fixtureElement('header', '.GlobalNav').getBoundingClientRect().top === 0
   })
 
   const restored = await page.evaluate(() => {
-    const target = document.querySelector('main').querySelector('h2')
+    const target = window.fixtureElement('h2', 'main h2')
 
     return {
       padding: document.documentElement.style.getPropertyValue('scroll-padding-top'),
       paddingPriority: document.documentElement.style.getPropertyPriority('scroll-padding-top'),
       margin: target.style.getPropertyValue('scroll-margin-top'),
       marginPriority: target.style.getPropertyPriority('scroll-margin-top'),
-      reserveHeight: document.querySelector('#ghpin-slot').getBoundingClientRect().height,
+      reserveHeight: window.fixtureElement('div', '#ghpin-slot').getBoundingClientRect().height,
     }
   })
 
@@ -214,7 +216,7 @@ await test('anchor offsets follow measured strip height and restore page-owned i
   await page.locator('#ghpin-root').evaluate((host) => {
     host.style.removeProperty('display')
 
-    host.querySelector('nav').style.removeProperty('min-height')
+    window.fixtureElement('nav', 'nav', host).style.removeProperty('min-height')
   })
 
   await waitForBar(page)

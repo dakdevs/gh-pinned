@@ -1,3 +1,4 @@
+import type { Page } from 'playwright'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
@@ -8,6 +9,75 @@ import { artifactsPath, browser } from './harness'
 const rocketDigest = '0'.repeat(64)
 const toolsDigest = '1'.repeat(64)
 const nativeDigest = '2'.repeat(64)
+
+function installFileNavigation() {
+  history.replaceState({ appId: 'fixture' }, '', location.href)
+
+  function selectFile(row: HTMLLIElement, event: MouseEvent | KeyboardEvent) {
+    const hash = window.fixtureElement('a', 'a', row).hash
+
+    if (event.metaKey || event.ctrlKey || (event instanceof MouseEvent && event.button === 1)) {
+      window.open(hash, '_blank')
+
+      return
+    }
+
+    const previousState: unknown = history.state
+
+    history.replaceState(previousState ?? {}, '', hash)
+
+    window.dispatchEvent(new CustomEvent('statechange', { bubbles: false, cancelable: false }))
+
+    const currentState: unknown = history.state
+
+    const appId: unknown = Object.getOwnPropertyDescriptor(currentState ?? {}, 'appId')?.value
+
+    history.pushState({ appId }, '', location.href)
+
+    window.dispatchEvent(new CustomEvent('statechange', { bubbles: false, cancelable: false }))
+
+    requestAnimationFrame(() => {
+      const element = window.fixtureElement('div', `#${CSS.escape(hash.slice(1))}`)
+
+      const modernPR = false
+
+      const yOffset =
+        element.getBoundingClientRect().top + window.scrollY - 10 - (60 + (modernPR ? 48 : 0))
+
+      window.scrollTo({ top: yOffset, left: 0 })
+
+      element.focus()
+    })
+  }
+
+  const tree = window.fixtureElement('aside', '#pr-file-tree')
+
+  for (const row of tree.querySelectorAll('li')) {
+    if (row.dataset.clientScroll === undefined) {
+      continue
+    }
+
+    window.fixtureElement('a', 'a', row).addEventListener('click', (event) => {
+      event.preventDefault()
+    })
+
+    row.addEventListener('click', (event) => {
+      selectFile(row, event)
+
+      event.stopPropagation()
+    })
+
+    row.addEventListener('keydown', (event) => {
+      if (document.activeElement === row && (event.key === 'Enter' || event.key === ' ')) {
+        event.preventDefault()
+
+        selectFile(row, event)
+
+        event.stopPropagation()
+      }
+    })
+  }
+}
 
 function customFilePage() {
   const tree = `<aside id="pr-file-tree"><ul role="tree" aria-label="File Tree">
@@ -28,42 +98,7 @@ function customFilePage() {
   // The public GitHub File.tsx and scroll-helpers.ts source map confirms
   // replaceState/statechange, pushState/statechange, then this numeric RAF
   // scroll. The native row deliberately exercises the already-clear guard.
-  const script = `<script>
-    history.replaceState({ appId: 'fixture' }, '', location.href);
-    function currentState() { return history.state || {}; }
-    function selectFile(row, event) {
-      const hash = row.querySelector('a').hash;
-      if (event.metaKey || event.ctrlKey || event.button === 1) {
-        window.open(hash, '_blank');
-        return;
-      }
-      history.replaceState(currentState(), '', hash);
-      window.dispatchEvent(new CustomEvent('statechange', { bubbles: false, cancelable: false }));
-      history.pushState({ appId: currentState().appId }, '', location.href);
-      window.dispatchEvent(new CustomEvent('statechange', { bubbles: false, cancelable: false }));
-      requestAnimationFrame(() => {
-        const element = document.getElementById(hash.slice(1));
-        const modernPR = false;
-        const yOffset = element.getBoundingClientRect().top + window.scrollY - 10 - (60 + (modernPR ? 48 : 0));
-        window.scrollTo({ top: yOffset, left: 0 });
-        element.focus();
-      });
-    }
-    for (const row of document.querySelectorAll('#pr-file-tree [data-client-scroll]')) {
-      row.querySelector('a').addEventListener('click', event => { event.preventDefault(); });
-      row.addEventListener('click', event => {
-        selectFile(row, event);
-        event.stopPropagation();
-      });
-      row.addEventListener('keydown', event => {
-        if (document.activeElement === row && (event.key === 'Enter' || event.key === ' ')) {
-          event.preventDefault();
-          selectFile(row, event);
-          event.stopPropagation();
-        }
-      });
-    }
-  </script>`
+  const script = `<script>(${installFileNavigation.toString()})()</script>`
 
   return fixture({ repo: 'acme/rocket', nativeSticky: true })
     .replace(
@@ -85,10 +120,9 @@ function customFilePage() {
     .replace('</body>', `${script}</body>`)
 }
 
-/** @param {import('playwright').Page} page @param {string} digest @param {string} phase */
-async function fileGeometry(page, digest, phase) {
+async function fileGeometry(page: Page, digest: string, phase: string) {
   await page.evaluate(() => {
-    return new Promise((resolve) => {
+    return new Promise<void>((resolve) => {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           resolve()
@@ -98,13 +132,13 @@ async function fileGeometry(page, digest, phase) {
   })
 
   const geometry = await page.evaluate((digest) => {
-    const target = document.querySelector(`#diff-${digest}`)
+    const target = window.fixtureElement('div', `#diff-${digest}`)
 
     return {
       targetTop: target.getBoundingClientRect().top,
       targetMargin: getComputedStyle(target).scrollMarginTop,
-      barHeight: document.querySelector('#ghpin-root').getBoundingClientRect().height,
-      toolbarBottom: document.querySelector('.GlobalNav').getBoundingClientRect().bottom,
+      barHeight: window.fixtureElement('div', '#ghpin-root').getBoundingClientRect().height,
+      toolbarBottom: window.fixtureElement('header', '.GlobalNav').getBoundingClientRect().bottom,
       scrollY,
       hash: location.hash,
     }
@@ -117,8 +151,7 @@ async function fileGeometry(page, digest, phase) {
   return geometry
 }
 
-/** @param {Awaited<ReturnType<typeof fileGeometry>>} geometry @param {number} expected */
-function expectFileVisible(geometry, expected) {
+function expectFileVisible(geometry: Awaited<ReturnType<typeof fileGeometry>>, expected: number) {
   assert.equal(geometry.targetMargin, '70px')
 
   assert.ok(
@@ -148,7 +181,7 @@ await test('React file-tree numeric scrolling clears the shifted toolbar once an
   await page.goto('https://github.com/acme/rocket/pull/1/files')
 
   await page.waitForFunction(() => {
-    return document.querySelector('.GlobalNav').getBoundingClientRect().top === 48
+    return window.fixtureElement('header', '.GlobalNav').getBoundingClientRect().top === 48
   })
 
   const tree = page.getByRole('tree', { name: 'File Tree', exact: true })
@@ -194,7 +227,7 @@ await test('React file-tree numeric scrolling clears the shifted toolbar once an
   })
 
   await page.waitForFunction(() => {
-    return document.querySelector('.GlobalNav').getBoundingClientRect().top === 84
+    return window.fixtureElement('header', '.GlobalNav').getBoundingClientRect().top === 84
   })
 
   await rocket.click()
@@ -206,7 +239,7 @@ await test('React file-tree numeric scrolling clears the shifted toolbar once an
   })
 
   await page.waitForFunction(() => {
-    return document.querySelector('.GlobalNav').getBoundingClientRect().top === 48
+    return window.fixtureElement('header', '.GlobalNav').getBoundingClientRect().top === 48
   })
 
   await rocket.click()

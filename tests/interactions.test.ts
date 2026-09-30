@@ -1,3 +1,4 @@
+import type { Page } from 'playwright'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
@@ -54,7 +55,7 @@ await test('unpin confirmation contains keyboard focus and cancellation preserve
 
     assert.equal(
       await page.evaluate(() => {
-        return document.activeElement.textContent.trim()
+        return document.activeElement?.textContent?.trim()
       }),
       'Cancel',
     )
@@ -85,7 +86,7 @@ await test('unpin confirmation contains keyboard focus and cancellation preserve
         }),
         true,
         `Focus escaped after ${key}: ${await page.evaluate(() => {
-          return document.activeElement.outerHTML.slice(0, 160)
+          return document.activeElement?.outerHTML.slice(0, 160)
         })}`,
       )
     }
@@ -106,7 +107,7 @@ await test('unpin confirmation contains keyboard focus and cancellation preserve
 
     assert.equal(
       await page.evaluate(() => {
-        return document.activeElement.getAttribute('aria-label')
+        return document.activeElement?.getAttribute('aria-label')
       }),
       'Open octo/tools',
     )
@@ -154,8 +155,7 @@ await test('unpin confirmation contains keyboard focus and cancellation preserve
   await expectPinned(page, 'octo/tools')
 })
 
-/** @param {import('playwright').Page} page @param {string} temporary @param {string} actionLabel */
-async function expectSplitSegmentState(page, temporary, actionLabel) {
+async function expectSplitSegmentState(page: Page, temporary: string, actionLabel: string) {
   const link = shortcut(page, 'acme/rocket')
 
   const tab = link.locator('..')
@@ -166,14 +166,17 @@ async function expectSplitSegmentState(page, temporary, actionLabel) {
 
   const hover = 'rgba(129, 139, 152, 0.12)'
 
-  /** @param {{tab: string, link: string, action: string}} expected */
-  async function expectBackgrounds(expected) {
+  async function expectBackgrounds(expected: Record<'tab' | 'link' | 'action', string>) {
     await page.waitForFunction((expected) => {
-      const link = document.querySelector('#ghpin-bar a[href="https://github.com/acme/rocket"]')
+      const link = window.fixtureElement('a', '#ghpin-bar a[href="https://github.com/acme/rocket"]')
 
       const tab = link.parentElement
 
-      const action = tab.querySelector('button')
+      if (tab === null) {
+        throw new Error('Repository link has no parent tab')
+      }
+
+      const action = window.fixtureElement('button', 'button', tab)
 
       return (
         getComputedStyle(tab).backgroundColor === expected.tab &&
@@ -186,8 +189,8 @@ async function expectSplitSegmentState(page, temporary, actionLabel) {
       await tab.evaluate((tab) => {
         return {
           tab: getComputedStyle(tab).backgroundColor,
-          link: getComputedStyle(tab.querySelector('a')).backgroundColor,
-          action: getComputedStyle(tab.querySelector('button')).backgroundColor,
+          link: getComputedStyle(window.fixtureElement('a', 'a', tab)).backgroundColor,
+          action: getComputedStyle(window.fixtureElement('button', 'button', tab)).backgroundColor,
         }
       }),
       expected,
@@ -203,9 +206,9 @@ async function expectSplitSegmentState(page, temporary, actionLabel) {
   await expectBackgrounds({ tab: transparent, link: transparent, action: transparent })
 
   const geometry = await tab.evaluate((tab) => {
-    const link = tab.querySelector('a')
+    const link = window.fixtureElement('a', 'a', tab)
 
-    const action = tab.querySelector('button')
+    const action = window.fixtureElement('button', 'button', tab)
 
     const linkBox = link.getBoundingClientRect()
 
@@ -270,7 +273,7 @@ async function expectSplitSegmentState(page, temporary, actionLabel) {
 
   assert.equal(
     await page.evaluate(() => {
-      return document.activeElement.getAttribute('href')
+      return document.activeElement?.getAttribute('href')
     }),
     'https://github.com/acme/rocket',
   )
@@ -278,11 +281,12 @@ async function expectSplitSegmentState(page, temporary, actionLabel) {
   assert.deepEqual(
     await tab.evaluate((tab) => {
       return {
-        link: getComputedStyle(tab.querySelector('a')).outlineWidth,
-        action: getComputedStyle(tab.querySelector('button')).outlineWidth,
+        link: getComputedStyle(window.fixtureElement('a', 'a', tab)).outlineWidth,
+        action: getComputedStyle(window.fixtureElement('button', 'button', tab)).outlineWidth,
         tab: getComputedStyle(tab).outlineStyle,
         tabBackground: getComputedStyle(tab).backgroundColor,
-        otherBackground: getComputedStyle(tab.querySelector('button')).backgroundColor,
+        otherBackground: getComputedStyle(window.fixtureElement('button', 'button', tab))
+          .backgroundColor,
       }
     }),
     {
@@ -298,7 +302,7 @@ async function expectSplitSegmentState(page, temporary, actionLabel) {
 
   assert.equal(
     await page.evaluate(() => {
-      return document.activeElement.getAttribute('aria-label')
+      return document.activeElement?.getAttribute('aria-label')
     }),
     actionLabel,
   )
@@ -306,11 +310,11 @@ async function expectSplitSegmentState(page, temporary, actionLabel) {
   assert.deepEqual(
     await tab.evaluate((tab) => {
       return {
-        link: getComputedStyle(tab.querySelector('a')).outlineWidth,
-        action: getComputedStyle(tab.querySelector('button')).outlineWidth,
+        link: getComputedStyle(window.fixtureElement('a', 'a', tab)).outlineWidth,
+        action: getComputedStyle(window.fixtureElement('button', 'button', tab)).outlineWidth,
         tab: getComputedStyle(tab).outlineStyle,
         tabBackground: getComputedStyle(tab).backgroundColor,
-        otherBackground: getComputedStyle(tab.querySelector('a')).backgroundColor,
+        otherBackground: getComputedStyle(window.fixtureElement('a', 'a', tab)).backgroundColor,
       }
     }),
     {
@@ -321,6 +325,31 @@ async function expectSplitSegmentState(page, temporary, actionLabel) {
       otherBackground: transparent,
     },
   )
+}
+
+function savedAnchorGeometry(anchor: Element) {
+  const style = getComputedStyle(anchor)
+
+  const anchorBox = anchor.getBoundingClientRect()
+
+  const parent = anchor.parentElement
+
+  if (parent === null) {
+    throw new Error('Repository link has no parent tab')
+  }
+
+  const tabBox = parent.getBoundingClientRect()
+
+  return {
+    corners: [
+      style.borderTopLeftRadius,
+      style.borderTopRightRadius,
+      style.borderBottomRightRadius,
+      style.borderBottomLeftRadius,
+    ],
+    leftGap: anchorBox.left - tabBox.left,
+    rightGap: tabBox.right - anchorBox.right,
+  }
 }
 
 await test('temporary tabs have independent Pin segments and saved tabs become complete rectangular anchors', async (t) => {
@@ -342,24 +371,7 @@ await test('temporary tabs have independent Pin segments and saved tabs become c
 
   const tab = link.locator('..')
 
-  const savedGeometry = await link.evaluate((anchor) => {
-    const style = getComputedStyle(anchor)
-
-    const anchorBox = anchor.getBoundingClientRect()
-
-    const tabBox = anchor.parentElement.getBoundingClientRect()
-
-    return {
-      corners: [
-        style.borderTopLeftRadius,
-        style.borderTopRightRadius,
-        style.borderBottomRightRadius,
-        style.borderBottomLeftRadius,
-      ],
-      leftGap: anchorBox.left - tabBox.left,
-      rightGap: tabBox.right - anchorBox.right,
-    }
-  })
+  const savedGeometry = await link.evaluate(savedAnchorGeometry)
 
   assert.deepEqual(savedGeometry.corners, ['6px', '6px', '6px', '6px'])
 
@@ -371,7 +383,7 @@ await test('temporary tabs have independent Pin segments and saved tabs become c
 
   await page.waitForFunction(() => {
     return (
-      getComputedStyle(document.querySelector('#ghpin-bar a')).backgroundColor ===
+      getComputedStyle(window.fixtureElement('a', '#ghpin-bar a')).backgroundColor ===
       'rgba(129, 139, 152, 0.12)'
     )
   })
@@ -387,7 +399,7 @@ await test('temporary tabs have independent Pin segments and saved tabs become c
 
   await page.waitForFunction(() => {
     return (
-      getComputedStyle(document.querySelector('#ghpin-bar a')).backgroundColor ===
+      getComputedStyle(window.fixtureElement('a', '#ghpin-bar a')).backgroundColor ===
       'rgba(0, 0, 0, 0)'
     )
   })
@@ -398,7 +410,7 @@ await test('temporary tabs have independent Pin segments and saved tabs become c
 
   assert.equal(
     await page.evaluate(() => {
-      return document.activeElement.getAttribute('aria-label')
+      return document.activeElement?.getAttribute('aria-label')
     }),
     'Open acme/rocket',
   )
@@ -414,7 +426,7 @@ await test('temporary tabs have independent Pin segments and saved tabs become c
 
   assert.equal(
     await page.evaluate(() => {
-      return document.activeElement.closest('#ghpin-bar')
+      return document.activeElement?.closest('#ghpin-bar')
     }),
     null,
     'A saved tab must have only its anchor in the keyboard tab order',
@@ -500,12 +512,12 @@ await test('repository destination menus use actual navigation, preserve pin sta
     ['ArrowUp', 'Settings'],
     ['Home', 'Repo home'],
     ['ArrowDown', 'Issues'],
-  ]) {
+  ] as const) {
     await page.keyboard.press(key)
 
     assert.equal(
       await page.evaluate(() => {
-        return document.activeElement.textContent.trim()
+        return document.activeElement?.textContent?.trim()
       }),
       focused,
     )
@@ -546,7 +558,9 @@ await test('repository destination menus use actual navigation, preserve pin sta
   await other.locator('#ghpin-bar a[href="https://github.com/acme/rocket/pulls"]').waitFor()
 
   await page.evaluate(() => {
-    document.querySelector('nav[aria-label="Repository"] a[href="/acme/rocket/issues"]').remove()
+    window
+      .fixtureElement('a', 'nav[aria-label="Repository"] a[href="/acme/rocket/issues"]')
+      .remove()
   })
 
   await acmeLink.click({ button: 'right' })
@@ -572,7 +586,7 @@ await test('repository destination menus use actual navigation, preserve pin sta
 
   assert.equal(
     await page.evaluate(() => {
-      return document.activeElement.getAttribute('aria-label')
+      return document.activeElement?.getAttribute('aria-label')
     }),
     'Open acme/rocket',
   )
@@ -587,7 +601,7 @@ await test('repository destination menus use actual navigation, preserve pin sta
 
   assert.equal(
     await page.evaluate(() => {
-      return document.activeElement.id
+      return document.activeElement?.id
     }),
     'fixture-control',
   )
@@ -667,7 +681,7 @@ await test('reliable removal of a saved destination resets it permanently, while
     { label: 'Settings', section: '/settings' },
   ]
 
-  const fixtures = new Map([
+  const fixtures: Parameters<typeof browser>[1] = new Map([
     ['/acme/rocket', { repo: 'acme/rocket', navigation: fullNavigation }],
     ['/octo/tools', { repo: 'octo/tools' }],
   ])
@@ -676,16 +690,15 @@ await test('reliable removal of a saved destination resets it permanently, while
 
   const page = await context.newPage()
 
-  const link = (name) => {
+  const link = (name: string) => {
     return page.locator('#ghpin-bar').getByRole('link', { name: `Open ${name}`, exact: true })
   }
 
-  const menu = (name) => {
+  const menu = (name: string) => {
     return page.getByRole('menu', { name: `Default destination for ${name}`, exact: true })
   }
 
-  /** @param {string} name @param {string} destination */
-  async function choose(name, destination) {
+  async function choose(name: string, destination: string) {
     await link(name).click({ button: 'right' })
 
     await menu(name).getByRole('menuitemradio', { name: destination, exact: true }).click()

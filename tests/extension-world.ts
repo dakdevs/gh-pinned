@@ -1,9 +1,13 @@
-/** @param {import('playwright').Page} page */
-export async function extensionWorld(page) {
+import type { Page } from 'playwright'
+
+function probeExtensionContext() {
+  return Boolean(globalThis.chrome?.runtime?.id)
+}
+
+export async function extensionWorld(page: Page) {
   const session = await page.context().newCDPSession(page)
 
-  /** @type {number[]} */
-  const contexts = []
+  const contexts: number[] = []
 
   session.on('Runtime.executionContextCreated', ({ context }) => {
     contexts.push(context.id)
@@ -14,7 +18,7 @@ export async function extensionWorld(page) {
   for (const contextId of contexts) {
     const probe = await session.send('Runtime.evaluate', {
       contextId,
-      expression: "typeof chrome === 'object' && Boolean(chrome.runtime?.id)",
+      expression: `(${probeExtensionContext.toString()})()`,
       returnByValue: true,
     })
 

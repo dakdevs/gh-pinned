@@ -1,11 +1,21 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import type { Page, Route } from 'playwright'
 import { extensionWorld } from './extension-world'
 import { browser, expectPinned } from './harness'
 import { gate, pullRequestsPage, softVisit } from './pr-count-fixtures'
 
-/** @param {import('playwright').Page} page @param {string} name @param {string} expected */
-async function countIs(page, name, expected) {
+function advanceClock() {
+  const future = Date.now() + 61000
+
+  Date.now = () => {
+    return future
+  }
+
+  return true
+}
+
+async function countIs(page: Page, name: string, expected: string) {
   await page.waitForFunction(
     ({ name, expected }) => {
       return (
@@ -33,10 +43,11 @@ function countTraffic() {
     ],
   ])
 
-  const state = { expired: false, active: 0, peak: 0, requested: /** @type {string[]} */ ([]) }
+  const requested: string[] = []
 
-  /** @param {import('playwright').Route} route */
-  async function handler(route) {
+  const state = { expired: false, active: 0, peak: 0, requested }
+
+  async function handler(route: Route) {
     const url = route.request().url()
 
     const reply = replies.get(url)
@@ -133,8 +144,7 @@ await test('authored PR fetching deduplicates fresh counts, refreshes after one 
 
   const clock = await world.session.send('Runtime.evaluate', {
     contextId: world.contextId,
-    expression:
-      '(() => { const future = Date.now() + 61000; Date.now = () => future; return true; })()',
+    expression: `(${advanceClock.toString()})()`,
     returnByValue: true,
   })
 
@@ -153,7 +163,7 @@ await test('authored PR fetching deduplicates fresh counts, refreshes after one 
   await octoRequest
 
   await page.evaluate(() => {
-    return new Promise((resolve) => {
+    return new Promise<void>((resolve) => {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           resolve()
@@ -183,7 +193,7 @@ await test('authored PR fetching deduplicates fresh counts, refreshes after one 
   await softVisit(page, 'acme/rocket')
 
   await page.evaluate(() => {
-    return new Promise((resolve) => {
+    return new Promise<void>((resolve) => {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           resolve()

@@ -5,15 +5,15 @@
   "description": "A small GitHub repository shortcut strip for Chrome.",
   "type": "module",
   "scripts": {
-    "prepare": "effect-tsgo patch --no-typescript --oxlint",
-    "build": "node build.mjs",
-    "typecheck": "tsc --noEmit",
-    "lint": "oxlint",
-    "lint:fix": "oxlint --fix",
-    "format": "oxfmt --write .",
-    "format:check": "oxfmt --check .",
-    "check": "npm run typecheck && npm run lint && npm run format:check",
-    "test": "npm run check && npm run build && node --import tsx --test tests/*.test.js"
+    "prepare": "bun run --bun effect-tsgo patch --no-typescript --oxlint",
+    "build": "bun build.ts",
+    "typecheck": "bun run --bun tsc --noEmit",
+    "lint": "bun run --bun oxlint",
+    "lint:fix": "bun run --bun oxlint --fix",
+    "format": "bun run --bun oxfmt --write .",
+    "format:check": "bun run --bun oxfmt --check .",
+    "check": "bun run typecheck && bun run lint && bun run format:check",
+    "test": "bun run check && bun run build && bun test tests/*.test.ts --timeout 15000"
   },
   "dependencies": {
     "@primer/octicons-react": "^19.38.0",
@@ -35,11 +35,10 @@
     "oxlint": "1.80.0",
     "oxlint-tsgolint": "7.0.2001",
     "playwright": "1.62.1",
-    "tsx": "4.23.12",
     "typescript": "7.0.2",
     "unplugin": "^2.3.11"
   },
   "engines": {
-    "node": ">=22.18.0"
+    "bun": ">=1.4.0"
   }
 }

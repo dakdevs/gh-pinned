@@ -2,7 +2,9 @@ import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { chromium } from 'playwright'
+import type { TestContext } from 'node:test'
+import type { PinIcon } from '@primer/octicons-react'
+import { chromium, type Locator, type Page } from 'playwright'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { fixture } from './fixtures'
@@ -13,8 +15,37 @@ const extensionPath = path.resolve(__dirname, '..', 'dist')
 
 export const artifactsPath = path.join(__dirname, 'artifacts')
 
-/** @param {string} profile @param {Map<string, import('./fixtures').FixtureOptions>} fixtures */
-export async function launch(profile, fixtures, deviceScaleFactor = 1) {
+export function installFixtureDOM() {
+  function fixtureElement<Tag extends keyof HTMLElementTagNameMap>(
+    tag: Tag,
+    selector: string,
+    scope: ParentNode = document,
+  ) {
+    const element = [...scope.querySelectorAll(tag)].find((candidate) => {
+      return candidate.matches(selector)
+    })
+
+    if (element === undefined) {
+      throw new Error(`Required fixture ${tag} element was not found: ${selector}`)
+    }
+
+    return element
+  }
+
+  window.fixtureElement = fixtureElement
+
+  return fixtureElement
+}
+
+declare global {
+  var fixtureElement: ReturnType<typeof installFixtureDOM>
+}
+
+export async function launch(
+  profile: string,
+  fixtures: Map<string, NonNullable<Parameters<typeof fixture>[0]>>,
+  deviceScaleFactor = 1,
+) {
   const context = await chromium.launchPersistentContext(profile, {
     channel: 'chromium',
     headless: true,
@@ -24,6 +55,8 @@ export async function launch(profile, fixtures, deviceScaleFactor = 1) {
   })
 
   context.setDefaultTimeout(5000)
+
+  await context.addInitScript(installFixtureDOM)
 
   await context.route(/^https:\/\/github\.com\/[^/]+\.png\?size=(?:40|80)$/u, (route) => {
     const url = new URL(route.request().url())
@@ -53,8 +86,11 @@ export async function launch(profile, fixtures, deviceScaleFactor = 1) {
   return context
 }
 
-/** @param {import('node:test').TestContext} t @param {Parameters<typeof launch>[1]} fixtures */
-export async function browser(t, fixtures, deviceScaleFactor = 1) {
+export async function browser(
+  t: TestContext,
+  fixtures: Parameters<typeof launch>[1],
+  deviceScaleFactor = 1,
+) {
   const profile = await mkdtemp(path.join(os.tmpdir(), 'ghpin-test-'))
 
   const context = await launch(profile, fixtures, deviceScaleFactor)
@@ -68,13 +104,11 @@ export async function browser(t, fixtures, deviceScaleFactor = 1) {
   return context
 }
 
-/** @param {import('playwright').Page} page @param {string} name */
-export function shortcut(page, name) {
+export function shortcut(page: Page, name: string) {
   return page.locator(`#ghpin-bar a[href="https://github.com/${name}"]`)
 }
 
-/** @param {import('playwright').Page} page @param {string} name */
-export async function expectPinned(page, name) {
+export async function expectPinned(page: Page, name: string) {
   await page.waitForFunction((name) => {
     const anchor = document.querySelector(`#ghpin-bar a[aria-label="Open ${name}"]`)
 
@@ -95,8 +129,7 @@ export async function expectPinned(page, name) {
   )
 }
 
-/** @param {import('playwright').Page} page @param {string} name */
-export async function openUnpin(page, name, keyboard = false) {
+export async function openUnpin(page: Page, name: string, keyboard = false) {
   const anchor = page.locator('#ghpin-bar').getByRole('link', { name: `Open ${name}`, exact: true })
 
   const menu = page.getByRole('menu', { name: `Default destination for ${name}`, exact: true })
@@ -112,7 +145,7 @@ export async function openUnpin(page, name, keyboard = false) {
 
     assert.equal(
       await page.evaluate(() => {
-        return document.activeElement.textContent.trim()
+        return document.activeElement?.textContent?.trim()
       }),
       'Unpin repository',
     )
@@ -129,8 +162,7 @@ export async function openUnpin(page, name, keyboard = false) {
   await page.getByRole('dialog', { name: 'Unpin repository?', exact: true }).waitFor()
 }
 
-/** @param {import('playwright').Locator} svg @param {typeof import('@primer/octicons-react').PinIcon} Icon */
-export async function expectOcticon(svg, Icon) {
+export async function expectOcticon(svg: Locator, Icon: typeof PinIcon) {
   assert.equal(await svg.getAttribute('viewBox'), '0 0 16 16')
 
   assert.equal(await svg.getAttribute('width'), '16')
@@ -156,8 +188,7 @@ export async function expectOcticon(svg, Icon) {
   )
 }
 
-/** @param {import('playwright').Page} page @param {string} name */
-export async function confirmUnpin(page, name) {
+export async function confirmUnpin(page: Page, name: string) {
   const dialog = page.getByRole('dialog', { name: 'Unpin repository?', exact: true })
 
   await dialog.waitFor()
@@ -169,7 +200,7 @@ export async function confirmUnpin(page, name) {
 
   assert.equal(
     await page.evaluate(() => {
-      return document.activeElement.textContent.trim()
+      return document.activeElement?.textContent?.trim()
     }),
     'Cancel',
   )
@@ -181,8 +212,7 @@ export async function confirmUnpin(page, name) {
   await dialog.waitFor({ state: 'hidden' })
 }
 
-/** @param {import('playwright').Page} page @param {string[]} names @param {string | null} [current] */
-export async function expectRepos(page, names, current = null) {
+export async function expectRepos(page: Page, names: string[], current: string | null = null) {
   const expected = names
     .map((name) => {
       return `https://github.com/${name}`
@@ -212,7 +242,7 @@ export async function expectRepos(page, names, current = null) {
         (current === null
           ? selected.length === 0
           : selected.length === 1 &&
-            selected[0].getAttribute('href') === `https://github.com/${current}`)
+            selected[0]?.getAttribute('href') === `https://github.com/${current}`)
       )
     },
     { expected, current },

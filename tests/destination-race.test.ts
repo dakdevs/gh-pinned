@@ -1,36 +1,80 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import type { Page } from 'playwright'
 import { browser, expectPinned } from './harness'
 import { extensionWorld } from './extension-world'
+import type { gate } from './pr-count-fixtures'
 
-/** @param {import('playwright').Page} page */
-async function pauseNextDestinationRead(page) {
+declare global {
+  var __ghpinReadStarted: Promise<unknown>
+  var __ghpinReleaseRead: ReturnType<typeof gate>['release']
+}
+
+async function installDestinationReadPause() {
+  const key = 'ghpin-destination:acme/rocket'
+
+  await navigator.locks.request(`${chrome.runtime.id}:${key}`, () => {})
+
+  const originalGet = chrome.storage.local.get.bind(chrome.storage.local)
+
+  window.__ghpinReadStarted = new Promise<unknown>((started) => {
+    setTimeout(() => {
+      started('read did not start')
+    }, 5000)
+
+    chrome.storage.local.get = new Proxy(originalGet, {
+      apply(target, _receiver, argumentsList) {
+        const keys: unknown = argumentsList[0]
+
+        // This isolated fixture supports Promise reads for its repository.
+        if (argumentsList.length > 1 || (keys !== null && keys !== undefined && keys !== key)) {
+          throw new Error(
+            'The held-read fixture requires a Promise read for acme/rocket or all keys',
+          )
+        }
+
+        const delivery = target(keys)
+
+        if (keys !== key) {
+          return delivery
+        }
+
+        return delivery.then(async (snapshot) => {
+          chrome.storage.local.get = originalGet
+
+          started(snapshot[key])
+
+          await new Promise<void>((resolve) => {
+            window.__ghpinReleaseRead = resolve
+          })
+
+          return snapshot
+        })
+      },
+    })
+  })
+
+  return true
+}
+
+function heldDestinationRead() {
+  return window.__ghpinReadStarted
+}
+
+function releaseDestinationRead() {
+  window.__ghpinReleaseRead()
+
+  return true
+}
+
+async function pauseNextDestinationRead(page: Page) {
   const { session, contextId } = await extensionWorld(page)
 
   // Capture an actual Chrome storage snapshot, then hold its delivery. The
   // extension still performs every read, write, reset, and UI interaction.
   const installed = await session.send('Runtime.evaluate', {
     contextId,
-    expression: `(async () => {
-        const key = 'ghpin-destination:acme/rocket';
-        await navigator.locks.request(chrome.runtime.id + ':' + key, () => undefined);
-        const originalGet = chrome.storage.local.get.bind(chrome.storage.local);
-        let started;
-        globalThis.__ghpinReadStarted = new Promise(resolve => {
-          started = resolve;
-          setTimeout(() => resolve('read did not start'), 5000);
-        });
-        chrome.storage.local.get = async keys => {
-          const snapshot = await originalGet(keys);
-          if (keys === key) {
-            chrome.storage.local.get = originalGet;
-            started(snapshot[key]?.section);
-            await new Promise(resolve => { globalThis.__ghpinReleaseRead = resolve; });
-          }
-          return snapshot;
-        };
-        return true;
-      })()`,
+    expression: `(${installDestinationReadPause.toString()})()`,
     awaitPromise: true,
     returnByValue: true,
   })
@@ -43,9 +87,11 @@ async function pauseNextDestinationRead(page) {
 async function destinationWriteIsQueued() {
   const locks = await navigator.locks.query()
 
-  return locks.pending.some((lock) => {
-    return lock.name.endsWith(':ghpin-destination:acme/rocket')
-  })
+  return (
+    locks.pending?.some((lock) => {
+      return lock.name?.endsWith(':ghpin-destination:acme/rocket') === true
+    }) ?? false
+  )
 }
 
 await test('a newer destination choice survives an older availability reset in another content-script tab', async (t) => {
@@ -94,14 +140,14 @@ await test('a newer destination choice survives an older availability reset in a
 
   const oldRead = await paused.session.send('Runtime.evaluate', {
     contextId: paused.contextId,
-    expression: 'globalThis.__ghpinReadStarted',
+    expression: `(${heldDestinationRead.toString()})()`,
     awaitPromise: true,
     returnByValue: true,
   })
 
-  assert.equal(
+  assert.deepEqual(
     oldRead.result.value,
-    '/issues',
+    { name: 'acme/rocket', section: '/issues' },
     'The older reset must hold the saved Issues snapshot',
   )
 
@@ -127,7 +173,7 @@ await test('a newer destination choice survives an older availability reset in a
 
   const release = await paused.session.send('Runtime.evaluate', {
     contextId: paused.contextId,
-    expression: 'globalThis.__ghpinReleaseRead(); true',
+    expression: `(${releaseDestinationRead.toString()})()`,
     returnByValue: true,
   })
 

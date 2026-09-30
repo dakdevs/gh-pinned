@@ -1,3 +1,4 @@
+import type { Page } from 'playwright'
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { browser, expectRepos, shortcut } from './harness'
@@ -15,38 +16,37 @@ function stripIsFixedAtTop() {
 
 function nativeHeaderIsBelowStrip() {
   return (
-    document.querySelector('.GlobalNav').getBoundingClientRect().top >=
-    document.querySelector('#ghpin-bar').getBoundingClientRect().bottom
+    window.fixtureElement('header', '.GlobalNav').getBoundingClientRect().top >=
+    window.fixtureElement('nav', '#ghpin-bar').getBoundingClientRect().bottom
   )
 }
 
 function placement() {
-  const host = document.querySelector('#ghpin-root')
+  const host = window.fixtureElement('div', '#ghpin-root')
 
-  const bar = document.querySelector('#ghpin-bar').getBoundingClientRect()
+  const bar = window.fixtureElement('nav', '#ghpin-bar').getBoundingClientRect()
 
-  const header = document.querySelector('.GlobalNav')
+  const header = window.fixtureElement('header', '.GlobalNav')
 
-  const slot = document.querySelector('#ghpin-slot')
+  const slot = window.fixtureElement('div', '#ghpin-slot')
 
   return {
     top: bar.top,
     bottom: bar.bottom,
     height: bar.height,
     width: host.getBoundingClientRect().width,
-    parent: host.parentElement.tagName,
-    firstBodyElement: document.body.firstElementChild.id,
+    parent: host.parentElement?.tagName,
+    firstBodyElement: document.body.firstElementChild?.id,
     reservationFollowsHost: host.nextElementSibling === slot,
     reservationHeight: slot.getBoundingClientRect().height,
-    mainTop: document.querySelector('main').getBoundingClientRect().top + scrollY,
+    mainTop: window.fixtureElement('main', 'main').getBoundingClientRect().top + scrollY,
     nativeTop: header.getBoundingClientRect().top,
     nativeBottom: header.getBoundingClientRect().bottom,
     nativePosition: getComputedStyle(header).position,
   }
 }
 
-/** @param {import('playwright').Page} page */
-async function expectTopPlacement(page) {
+async function expectTopPlacement(page: Page) {
   await page.waitForFunction(stripIsFixedAtTop)
 
   await page.waitForFunction(nativeHeaderIsBelowStrip)
@@ -68,20 +68,19 @@ async function expectTopPlacement(page) {
   return state
 }
 
-/** @param {import('playwright').Page} page */
-async function expectNestedHeaderPositions(page) {
+async function expectNestedHeaderPositions(page: Page) {
   await page.waitForFunction(() => {
     return (
-      document.querySelector('.GlobalNav').getBoundingClientRect().top ===
-      document.querySelector('#ghpin-bar').getBoundingClientRect().bottom
+      window.fixtureElement('header', '.GlobalNav').getBoundingClientRect().top ===
+      window.fixtureElement('nav', '#ghpin-bar').getBoundingClientRect().bottom
     )
   })
 
   const bounds = await page.evaluate(() => {
     return {
-      barBottom: document.querySelector('#ghpin-bar').getBoundingClientRect().bottom,
-      outerTop: document.querySelector('.GlobalNav').getBoundingClientRect().top,
-      innerTop: document.querySelector('#nested-native-nav').getBoundingClientRect().top,
+      barBottom: window.fixtureElement('nav', '#ghpin-bar').getBoundingClientRect().bottom,
+      outerTop: window.fixtureElement('header', '.GlobalNav').getBoundingClientRect().top,
+      innerTop: window.fixtureElement('nav', '#nested-native-nav').getBoundingClientRect().top,
     }
   })
 
@@ -136,11 +135,11 @@ await test('the repository strip is always above global headers, reserves conten
   await page.setViewportSize({ width: 760, height: 800 })
 
   await page.waitForFunction(() => {
-    return document.querySelector('#ghpin-root').getBoundingClientRect().width === 760
+    return window.fixtureElement('div', '#ghpin-root').getBoundingClientRect().width === 760
   })
 
   await page.waitForFunction(() => {
-    return getComputedStyle(document.querySelector('.GlobalNav')).top === '80px'
+    return getComputedStyle(window.fixtureElement('header', '.GlobalNav')).top === '80px'
   })
 
   assert.equal((await expectTopPlacement(page)).nativeTop, 80)
@@ -163,7 +162,7 @@ await test('the repository strip is always above global headers, reserves conten
     replacement.innerHTML =
       '<div class="global-row" data-component="Stack" data-direction="horizontal">Replacement global header</div><nav class="repo-nav" aria-label="Repository"><a href="/acme/rocket">Code</a></nav>'
 
-    document.querySelector('.GlobalNav').replaceWith(replacement)
+    window.fixtureElement('header', '.GlobalNav').replaceWith(replacement)
   })
 
   await expectRepos(page, ['acme/rocket'], 'acme/rocket')
@@ -189,7 +188,7 @@ await test('the repository strip is always above global headers, reserves conten
   })
 
   await page.waitForFunction(() => {
-    return getComputedStyle(document.querySelector('.GlobalNav')).top === '80px'
+    return getComputedStyle(window.fixtureElement('header', '.GlobalNav')).top === '80px'
   })
 
   assert.equal(
@@ -238,7 +237,7 @@ await test('the repository strip is always above global headers, reserves conten
   await page.setViewportSize({ width: 390, height: 800 })
 
   await page.waitForFunction(() => {
-    return document.querySelector('#ghpin-root').getBoundingClientRect().width === 390
+    return window.fixtureElement('div', '#ghpin-root').getBoundingClientRect().width === 390
   })
 
   await expectTopPlacement(page)
@@ -276,7 +275,7 @@ await test('the repository strip is always above global headers, reserves conten
   })
 
   await page.waitForFunction(() => {
-    return document.querySelector('.GlobalNav').getBoundingClientRect().top === 80
+    return window.fixtureElement('header', '.GlobalNav').getBoundingClientRect().top === 80
   })
 
   assert.equal(
@@ -294,15 +293,15 @@ await test('the repository strip is always above global headers, reserves conten
 
     header.style.overflow = 'visible'
 
-    header.querySelector('nav').style.position = 'fixed'
+    window.fixtureElement('nav', 'nav', header).style.position = 'fixed'
 
     window.dispatchEvent(new Event('resize'))
   })
 
   await page.waitForFunction(() => {
     return (
-      document.querySelector('#nested-native-nav').getBoundingClientRect().top >=
-      document.querySelector('#ghpin-bar').getBoundingClientRect().bottom
+      window.fixtureElement('nav', '#nested-native-nav').getBoundingClientRect().top >=
+      window.fixtureElement('nav', '#ghpin-bar').getBoundingClientRect().bottom
     )
   })
 

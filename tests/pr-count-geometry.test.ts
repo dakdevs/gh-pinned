@@ -1,16 +1,16 @@
+import type { Locator } from 'playwright'
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { browser } from './harness'
 import { pullRequestsPage } from './pr-count-fixtures'
 
-/** @param {import('playwright').Locator} link */
-async function geometry(link) {
+async function geometry(link: Locator) {
   await link.locator('[data-ghpin-pr-count]').waitFor()
 
   return link.evaluate((anchor) => {
-    const label = anchor.querySelector('[data-content]')
+    const label = window.fixtureElement('span', '[data-content]', anchor)
 
-    const badge = anchor.querySelector('[data-ghpin-pr-count]')
+    const badge = window.fixtureElement('span', '[data-ghpin-pr-count]', anchor)
 
     const range = document.createRange()
 
@@ -44,7 +44,7 @@ await test('repository badges keep an 8px visible gap and stable tab widths thro
   const longRepo =
     'acme/repository-with-an-exceedingly-long-name-to-check-that-counter-spacing-preserves-ellipsis-truncation'
 
-  const fixtures = new Map(
+  const fixtures: Parameters<typeof browser>[1] = new Map(
     [repo, other, longRepo].map((name) => {
       return [`/${name}`, { repo: name, ownerLogin: 'acme', viewer: 'alice' }]
     }),
@@ -63,7 +63,7 @@ await test('repository badges keep an 8px visible gap and stable tab widths thro
 
   const page = await context.newPage()
 
-  const link = (name) => {
+  const link = (name: string) => {
     return page.locator('#ghpin-bar').getByRole('link', { name: `Open ${name}`, exact: true })
   }
 

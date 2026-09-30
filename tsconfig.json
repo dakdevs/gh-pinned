@@ -4,8 +4,6 @@
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "allowJs": true,
-    "checkJs": false,
     "allowImportingTsExtensions": true,
     "jsx": "react-jsx",
     "strict": true,
@@ -16,5 +14,5 @@
     "skipLibCheck": true,
     "types": ["chrome", "node"]
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "tests/**/*.js", "build.mjs", "oxlint.config.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts", "build.ts", "oxlint.config.ts"]
 }

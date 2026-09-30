@@ -1,13 +1,18 @@
+import type { Page, Response } from 'playwright'
 import { fixture } from './fixtures'
 
-/**
- * @typedef {{ repo: string, viewer: string, openCount?: number | string | null,
- * layoutRepo?: string, metadataRepo?: string, filter?: string, initialPath?: string,
- * currentPage?: number }} PullRequestsOptions
- */
+type PullRequestsOptions = {
+  repo: string
+  viewer: string
+  openCount?: number | string | null
+  layoutRepo?: string
+  metadataRepo?: string
+  filter?: string
+  initialPath?: string
+  currentPage?: number
+}
 
-/** @param {PullRequestsOptions} options */
-export function pullRequestsPage(options) {
+export function pullRequestsPage(options: PullRequestsOptions) {
   const { repo, viewer, openCount, currentPage = 1 } = options
 
   const [ownerLogin, name] = (options.layoutRepo ?? repo).split('/')
@@ -69,7 +74,7 @@ export function pullRequestsPage(options) {
 export function gate() {
   let release = () => {}
 
-  const promise = new Promise((resolve) => {
+  const promise = new Promise<void>((resolve) => {
     release = () => {
       resolve()
     }
@@ -78,33 +83,31 @@ export function gate() {
   return { promise, release }
 }
 
-/** @param {import('playwright').Page} page @param {string} name */
-export async function softVisit(page, name) {
+export async function softVisit(page: Page, name: string) {
   await page.evaluate((name) => {
     history.pushState({}, '', `/${name}`)
 
-    document
-      .querySelector('meta[name="octolytics-dimension-repository_nwo"]')
+    window
+      .fixtureElement('meta', '[name="octolytics-dimension-repository_nwo"]')
       .setAttribute('content', name)
 
-    document.querySelector('#repository-container-header').innerHTML =
+    window.fixtureElement('div', '#repository-container-header').innerHTML =
       `<a href="/${name}">${name}</a>`
 
-    document.querySelector('nav[aria-label="Repository"]').innerHTML =
+    window.fixtureElement('nav', '[aria-label="Repository"]').innerHTML =
       `<a href="/${name}">Code</a><a href="/${name}/pulls">Pull requests</a>`
 
     document.dispatchEvent(new Event('turbo:load'))
   }, name)
 }
 
-/** @param {import('playwright').Page} page @param {import('playwright').Response} response */
-export async function paintSettledResponse(page, response) {
+export async function paintSettledResponse(page: Page, response: Response) {
   await response.finished()
 
   // Let the consumed response commit and paint before asserting an omitted
   // state, which would otherwise also pass while the request was still loading.
   await page.evaluate(() => {
-    return new Promise((resolve) => {
+    return new Promise<void>((resolve) => {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           resolve()

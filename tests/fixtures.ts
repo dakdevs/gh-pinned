@@ -1,9 +1,24 @@
-/**
- * @typedef {{ label: string, section: string, href?: string, disabled?: boolean, count?: number }} NavigationItem
- * @typedef {{ repo?: string | null, metadata?: string | null, theme?: string, header?: string,
- * navigation?: NavigationItem[], controls?: boolean, tall?: boolean, nativeSticky?: boolean,
- * nativeFixed?: boolean, viewer?: string, ownerLogin?: string }} FixtureOptions
- */
+type NavigationItem = {
+  label: string
+  section: string
+  href?: string
+  disabled?: boolean
+  count?: number
+}
+
+type FixtureOptions = {
+  repo?: string | null
+  metadata?: string | null
+  theme?: string
+  header?: string
+  navigation?: NavigationItem[]
+  controls?: boolean
+  tall?: boolean
+  nativeSticky?: boolean
+  nativeFixed?: boolean
+  viewer?: string
+  ownerLogin?: string
+}
 
 const defaultNavigation = [
   { label: 'Code', section: '' },
@@ -12,8 +27,7 @@ const defaultNavigation = [
   { label: 'Settings', section: '/settings' },
 ]
 
-/** @param {string | null} repo @param {NavigationItem[]} [items] */
-function repositoryNavigation(repo, items = defaultNavigation) {
+function repositoryNavigation(repo: string | null, items: NavigationItem[] = defaultNavigation) {
   if (repo === null) {
     return ''
   }
@@ -25,8 +39,7 @@ function repositoryNavigation(repo, items = defaultNavigation) {
   return `<nav class="repo-nav" aria-label="Repository">${links.join('')}</nav>`
 }
 
-/** @param {string} header @param {string} repoNavigation */
-function globalHeader(header, repoNavigation) {
+function globalHeader(header: string, repoNavigation: string) {
   const marketing = header === 'marketing'
 
   const wrapperStart = marketing ? '<react-partial><div data-color-mode="dark">' : ''
@@ -45,8 +58,7 @@ function globalHeader(header, repoNavigation) {
     </header>${wrapperEnd}`
 }
 
-/** @param {string | null} repo @param {string} header @param {string} repoNavigation */
-function repositoryHeader(repo, header, repoNavigation) {
+function repositoryHeader(repo: string | null, header: string, repoNavigation: string) {
   if (repo === null) {
     return '<h1>GitHub</h1>'
   }
@@ -55,8 +67,7 @@ function repositoryHeader(repo, header, repoNavigation) {
     ${header === 'GlobalNav' ? '' : repoNavigation}`
 }
 
-/** @param {FixtureOptions} [options] */
-export function fixture(options = {}) {
+export function fixture(options: FixtureOptions = {}) {
   const { repo, theme, header, controls, tall, nativeSticky, nativeFixed, viewer, ownerLogin } = {
     repo: null,
     theme: 'light',

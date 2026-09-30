@@ -1,3 +1,4 @@
+import type { fixture } from './fixtures'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm, mkdir } from 'node:fs/promises'
 import os from 'node:os'
@@ -72,7 +73,7 @@ await test('temporary current repository is selected, pinnable by keyboard, and 
 
   assert.equal(
     await page.evaluate(() => {
-      return document.activeElement.getAttribute('aria-label')
+      return document.activeElement?.getAttribute('aria-label')
     }),
     'Open acme/rocket',
   )
@@ -105,7 +106,7 @@ await test('temporary current repository is selected, pinnable by keyboard, and 
 
   assert.equal(
     await page.evaluate(() => {
-      return document.activeElement.getAttribute('aria-label')
+      return document.activeElement?.getAttribute('aria-label')
     }),
     'Open acme/rocket',
   )
@@ -141,7 +142,7 @@ await test('temporary current repository is selected, pinnable by keyboard, and 
 await test('pins survive a browser restart and unpinning the current repo restores its temporary status', async (t) => {
   const profile = await mkdtemp(path.join(os.tmpdir(), 'ghpin-persistence-'))
 
-  const fixtures = new Map([
+  const fixtures: Parameters<typeof browser>[1] = new Map([
     ['/acme/rocket', { repo: 'acme/rocket' }],
     ['/acme/rocket/settings', { repo: 'acme/rocket' }],
     ['/dashboard', {}],
@@ -244,7 +245,7 @@ await test('soft navigation, header replacement, and body replacement preserve o
     await page.locator('#ghpin-root').evaluate((host) => {
       return (
         host.getBoundingClientRect().bottom <=
-        document.querySelector('.AppHeader').getBoundingClientRect().top
+        window.fixtureElement('header', '.AppHeader').getBoundingClientRect().top
       )
     }),
     true,
@@ -262,17 +263,17 @@ await test('soft navigation, header replacement, and body replacement preserve o
   await page.evaluate(() => {
     history.pushState({}, '', '/octo/tools/issues')
 
-    document.querySelector('meta[name="octolytics-dimension-repository_nwo"]').content =
+    window.fixtureElement('meta', 'meta[name="octolytics-dimension-repository_nwo"]').content =
       'octo/tools'
 
-    document.querySelector('.AppHeader').replaceWith(
+    window.fixtureElement('header', '.AppHeader').replaceWith(
       Object.assign(document.createElement('header'), {
         className: 'AppHeader',
         textContent: 'Replacement GitHub header',
       }),
     )
 
-    document.querySelector('#repository-container-header').innerHTML =
+    window.fixtureElement('div', '#repository-container-header').innerHTML =
       '<a href="/octo/tools">octo/tools</a>'
   })
 
@@ -303,7 +304,7 @@ await test('soft navigation, header replacement, and body replacement preserve o
 
   assert.equal(
     await page.locator('#ghpin-root').evaluate((host) => {
-      return host.parentElement.tagName
+      return host.parentElement?.tagName
     }),
     'BODY',
   )
@@ -319,7 +320,7 @@ await test('soft navigation, header replacement, and body replacement preserve o
     await page.locator('#ghpin-root').evaluate((host) => {
       return (
         host.getBoundingClientRect().bottom <=
-        document.querySelector('.AppHeader').getBoundingClientRect().top
+        window.fixtureElement('header', '.AppHeader').getBoundingClientRect().top
       )
     }),
     true,
@@ -361,14 +362,14 @@ await test('simultaneous pins and unpins propagate between open tabs without los
   await expectRepos(first, ['acme/rocket'], 'acme/rocket')
 
   await first.waitForFunction(() => {
-    return document.activeElement.getAttribute('href') === 'https://github.com/acme/rocket'
+    return document.activeElement?.getAttribute('href') === 'https://github.com/acme/rocket'
   })
 
   assert.deepEqual(
     await first.evaluate(() => {
       return {
-        tag: document.activeElement.tagName,
-        href: document.activeElement.getAttribute('href'),
+        tag: document.activeElement?.tagName,
+        href: document.activeElement?.getAttribute('href'),
       }
     }),
     {
@@ -398,9 +399,9 @@ await test('the strip follows page theme colors, stays horizontally scrollable, 
     'rust-lang/rust',
   ]
 
-  const fixtures = new Map([
+  const fixtures = new Map<string, NonNullable<Parameters<typeof fixture>[0]>>([
     ...repos.map((repo) => {
-      return [`/${repo}`, { repo }]
+      return [`/${repo}`, { repo }] as const
     }),
     ['/features', { header: 'marketing' }],
   ])
@@ -431,9 +432,10 @@ await test('the strip follows page theme colors, stays horizontally scrollable, 
       color: getComputedStyle(bar).color,
       top: bar.getBoundingClientRect().top,
       bottom: bar.getBoundingClientRect().bottom,
-      globalTop: document.querySelector('.GlobalNav').getBoundingClientRect().top,
-      repositoryTop: document.querySelector('nav[aria-label="Repository"]').getBoundingClientRect()
-        .top,
+      globalTop: window.fixtureElement('header', '.GlobalNav').getBoundingClientRect().top,
+      repositoryTop: window
+        .fixtureElement('nav', 'nav[aria-label="Repository"]')
+        .getBoundingClientRect().top,
     }
   })
 
@@ -496,12 +498,13 @@ await test('the strip follows page theme colors, stays horizontally scrollable, 
   const marketingPlacement = await bar.evaluate((bar) => {
     return {
       insidePartial: Boolean(bar.closest('react-partial')),
-      parent: bar.closest('#ghpin-root').parentElement.tagName,
-      firstBodyElement: document.body.firstElementChild.id,
+      parent: window.fixtureElement('div', '#ghpin-root').parentElement?.tagName,
+      firstBodyElement: document.body.firstElementChild?.id,
       top: bar.getBoundingClientRect().top,
       bottom: bar.getBoundingClientRect().bottom,
-      headerTop: document.querySelector('header[data-marketing-header]').getBoundingClientRect()
-        .top,
+      headerTop: window
+        .fixtureElement('header', 'header[data-marketing-header]')
+        .getBoundingClientRect().top,
       background: getComputedStyle(bar).backgroundColor,
       color: getComputedStyle(bar).color,
     }
@@ -572,7 +575,7 @@ await test('official Octicon pin geometry, owner avatars, and short repository n
   for (const [name, owner] of [
     ['acme/widget', 'acme'],
     ['octo/widget', 'octo'],
-  ]) {
+  ] as const) {
     const link = shortcut(page, name)
 
     assert.equal(await link.innerText(), 'widget')
@@ -586,13 +589,17 @@ await test('official Octicon pin geometry, owner avatars, and short repository n
     await avatar.waitFor()
 
     await link.evaluate((anchor) => {
-      return anchor.querySelector('img').decode()
+      const image = window.fixtureElement('img', 'img', anchor)
+
+      return image.decode()
     })
 
     assert.equal(await avatar.getAttribute('alt'), '')
 
     const image = await link.evaluate((anchor) => {
-      const image = anchor.querySelector('img')
+      const image = window.fixtureElement('img', 'img', anchor)
+
+      const name = window.fixtureElement('span', '[data-content]', anchor)
 
       return {
         src: image.currentSrc,
@@ -601,7 +608,7 @@ await test('official Octicon pin geometry, owner avatars, and short repository n
         naturalWidth: image.naturalWidth,
         borderRadius: getComputedStyle(image).borderRadius,
         avatarRight: image.getBoundingClientRect().right,
-        nameLeft: image.closest('a').querySelector('[data-content]').getBoundingClientRect().left,
+        nameLeft: name.getBoundingClientRect().left,
       }
     })
 
